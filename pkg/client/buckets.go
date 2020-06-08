@@ -1,7 +1,6 @@
 package client
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -70,14 +69,10 @@ type BucketCreateOptions struct {
 	Description string `json:"description"`
 }
 
-// BucketUpdateOptions - bucket update opts
-type BucketUpdateOptions struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-
-	// Context can be set with a timeout or can be used to cancel a request.
-	Context context.Context `json:"-"`
+// BucketDeleteOptions are used to delete bucket
+type BucketDeleteOptions struct {
+	Ref   string `json:"ref"`
+	Force bool   `json:"force"`
 }
 
 // BucketListOptions - TODO
@@ -131,6 +126,42 @@ func (api *API) CreateBucket(opts *BucketCreateOptions) (*Bucket, error) {
 		return nil, err
 	}
 	return &bucket, nil
+}
+
+// BucketUpdate updates a Bucket on the server and returns the updated object.
+func (api *API) BucketUpdate(opts *Bucket) (*Bucket, error) {
+	bucketID, err := api.ensureBucketID(opts.ID)
+	if err != nil {
+		return nil, err
+	}
+	opts.ID = bucketID
+
+	resp, err := api.makeRequest("PUT", "/buckets/"+opts.ID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	var bucket Bucket
+	if err := json.Unmarshal(resp, &bucket); err != nil {
+		return nil, err
+	}
+	return &bucket, nil
+}
+
+// BucketDelete removes a Bucket by its reference.
+func (api *API) BucketDelete(opts *BucketDeleteOptions) error {
+
+	bucketID, err := api.ensureBucketID(opts.Ref)
+	if err != nil {
+		return err
+	}
+
+	_, err = api.makeRequest("DELETE", "/buckets/"+bucketID, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // ensureBucketID - takes name/id and always returns ID (when it not fails)
