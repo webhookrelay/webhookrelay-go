@@ -4,6 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/pkg/errors"
+)
+
+var (
+	// ErrNoSuchInput is the error returned when the Input does not exist.
+	ErrNoSuchInput = errors.New("no such input")
 )
 
 // Input - webhook inputs are used to create endpoints which are then used
@@ -97,4 +104,68 @@ func (api *API) allInputList(opts *BucketListOptions) ([]*Input, error) {
 	}
 
 	return inputs, nil
+}
+
+// CreateInput creates a Input and returns the new object.
+func (api *API) CreateInput(opts *Input) (*Input, error) {
+	bucketID, err := api.ensureBucketID(opts.BucketID)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := api.makeRequest("POST", "/buckets/"+bucketID+"/inputs", opts)
+	if err != nil {
+		return nil, err
+	}
+
+	var input Input
+	err = json.Unmarshal(resp, &input)
+	return &input, nil
+}
+
+// UpdateInput updates existing input
+func (api *API) UpdateInput(opts *Input) (*Input, error) {
+	bucketID, err := api.ensureBucketID(opts.BucketID)
+	if err != nil {
+		return nil, err
+	}
+
+	inputID, err := api.ensureInputID(opts.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := api.makeRequest("PUT", "/buckets/"+bucketID+"/inputs/"+inputID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	var input Input
+	err = json.Unmarshal(resp, &input)
+	return &input, nil
+}
+
+// ensureInputID - takes name/id and always returns ID (when it not fails)
+func (api *API) ensureInputID(ref string) (string, error) {
+	if !IsUUID(ref) {
+		id, err := api.inputIDFromName(ref)
+		if err != nil {
+			return "", err
+		}
+		return id, nil
+	}
+	return ref, nil
+}
+
+func (api *API) inputIDFromName(name string) (id string, err error) {
+	inputs, err := api.ListInputs(&InputListOptions{})
+	if err != nil {
+		return
+	}
+	for _, b := range inputs {
+		if b.Name == name {
+			return b.ID, nil
+		}
+	}
+	return "", ErrNoSuchInput
 }
