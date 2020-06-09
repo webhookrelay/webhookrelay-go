@@ -1,0 +1,63 @@
+syntax = "proto3";
+package github.com.webhookrelay.apis.reactor_v1;
+
+option go_package = "github.com/webhookrelay/webhookrelay-go/pkg/apis/reactor/v1";
+
+message Function {
+  // ID of the function
+  string id        = 1 [json_name="id"];
+  string accountId = 2 [json_name="account_id"];
+  int64 created    = 3 [json_name="created"];
+  int64 updated    = 4 [json_name="updated"];
+
+  // driver specifies which driver reactor should use
+  string driver    = 5 [json_name="driver"];
+  // payload is the actual application function/executable/wasm
+  bytes  payload   = 6 [json_name="payload"];
+  // misc
+  string name      = 7 [json_name="name"];
+
+  int64 payloadSize = 8 [json_name="payload_size"];
+  // compression type (if any) for example gzip, zlib
+  string compression = 9 [json_name="compression"];
+ 
+  map<string, string> metadata = 10 [json_name="metadata"];
+}
+
+message ExecuteResponse {
+  string   requestId        = 1 [json_name="request_id"];       // request ID is used for observability
+  bool     requestModified  = 2 [json_name="request_modified"];
+  bool     responseModified = 3 [json_name="response_modified"];
+  Request  request          = 4 [json_name="request"];
+  Response response         = 5 [json_name="response"];
+  string   functionId       = 6 [json_name="function_id"];
+  string   error            = 7 [json_name="error"];            // driver error
+  // TODO: maybe use some kind of status/state/action field instead to have
+  // multiple states. But what states?
+  bool     stopForwarding   = 8 [json_name="stop_forwarding"];  // do not forward
+}
+
+message Request {
+  bytes  body                     = 1  [json_name="body"];
+  bool   bodyModified              = 2  [json_name="body_modified"];
+  map<string, HeaderValue> header = 3  [json_name="header"];
+  bool   headerModified           = 4  [json_name="header_modified"];
+  string path                     = 5  [json_name="path"];       // /v1/api/something
+  bool   pathModified             = 6  [json_name="path_modified"];
+  string rawQuery                 = 7  [json_name="raw_query"];  // query without ? foo=bar
+  bool   rawQueryModified         = 8  [json_name="raw_query_modified"];
+  string method                   = 9  [json_name="method"];
+  bool   methodModified           = 10 [json_name="method_modified"];
+}
+
+message HeaderValue {
+  repeated string values = 1;
+}
+
+// Response is an optional struct that can be set my the script
+// so we return a dynamic response
+message Response {
+  int32  status   = 1;
+  bytes  body     = 2;
+  map<string, HeaderValue> header = 3;
+}
