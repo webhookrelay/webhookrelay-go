@@ -65,6 +65,7 @@ func (i *Input) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// InputListOptions used to query inputs
 type InputListOptions struct {
 	Bucket string // Bucket reference - ID or name
 }
@@ -106,7 +107,7 @@ func (api *API) allInputList(opts *BucketListOptions) ([]*Input, error) {
 	return inputs, nil
 }
 
-// CreateInput creates a Input and returns the new object.
+// CreateInput creates an Input and returns the new object.
 func (api *API) CreateInput(options *Input) (*Input, error) {
 	bucketID, err := api.ensureBucketID(options.BucketID)
 	if err != nil {
@@ -138,7 +139,7 @@ func (api *API) UpdateInput(options *Input) (*Input, error) {
 		return nil, err
 	}
 
-	inputID, err := api.ensureInputID(options.Name)
+	inputID, err := api.ensureInputID(options.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +157,7 @@ func (api *API) UpdateInput(options *Input) (*Input, error) {
 // InputDeleteOptions delete options
 type InputDeleteOptions struct {
 	Bucket string
-	Input  string
+	Input  string // ID or name
 }
 
 // DeleteInput removes input. If public input is used by the UUID, beware that after deleting
