@@ -4,6 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/pkg/errors"
+)
+
+var (
+	// ErrNoSuchOutput is the error returned when the Output does not exist.
+	ErrNoSuchOutput = errors.New("no such output")
 )
 
 // Output specified webhook forwarding destination
@@ -58,9 +65,9 @@ type OutputListOptions struct {
 	Bucket string // Bucket reference - ID or name
 }
 
-// OutputList returns a list of outputs belonging to the bucket. If bucket reference not supplied,
+// ListOutputs returns a list of outputs belonging to the bucket. If bucket reference not supplied,
 // all account outputs will be returned
-func (api *API) OutputList(options *OutputListOptions) ([]*Output, error) {
+func (api *API) ListOutputs(options *OutputListOptions) ([]*Output, error) {
 	if options.Bucket == "" {
 		return api.allOutputList(&BucketListOptions{})
 	}
@@ -92,4 +99,101 @@ func (api *API) allOutputList(options *BucketListOptions) ([]*Output, error) {
 	}
 
 	return outputs, nil
+}
+
+// CreateOutput creates an Output and returns the new object
+func (api *API) CreateOutput(options *Output) (*Output, error) {
+	bucketID, err := api.ensureBucketID(options.BucketID)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := api.makeRequest("POST", "/buckets/"+bucketID+"/outputs", options)
+	if err != nil {
+		return nil, err
+	}
+
+	var result Output
+	err = json.Unmarshal(resp, &result)
+	return &result, nil
+}
+
+// UpdateOutput updates output
+func (api *API) UpdateOutput(options *Output) (*Output, error) {
+
+	bucketID, err := api.ensureBucketID(options.BucketID)
+	if err != nil {
+		return nil, err
+	}
+
+	outputID, err := api.ensureOutputID(bucketID, options.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := api.makeRequest("PUT", "/buckets/"+bucketID+"/outputs/"+outputID, options)
+	if err != nil {
+		return nil, err
+	}
+
+	var output Output
+	err = json.Unmarshal(resp, &output)
+	return &output, nil
+}
+
+// OutputDeleteOptions delete options
+type OutputDeleteOptions struct {
+	Bucket string
+	Output string // ID or name
+}
+
+// DeleteOutput deletes output from the bucket
+func (api *API) DeleteOutput(options *OutputDeleteOptions) error {
+
+	if options.Bucket == "" {
+		return fmt.Errorf("bucket not specified")
+	}
+
+	if options.Output == "" {
+		return fmt.Errorf("output not specified")
+	}
+
+	bucketID, err := api.ensureBucketID(options.Bucket)
+	if err != nil {
+		return err
+	}
+
+	outputID, err := api.ensureOutputID(bucketID, options.Output)
+	if err != nil {
+		return err
+	}
+
+	_, err = api.makeRequest("DELETE", "/buckets/"+bucketID+"/outputs/"+outputID, nil)
+	return err
+}
+
+func (api *API) ensureOutputID(bucket, ref string) (string, error) {
+	if !IsUUID(ref) {
+		id, err := api.outputIDFromName(bucket, ref)
+		if err != nil {
+			return "", err
+		}
+		return id, nil
+	}
+	return ref, nil
+}
+
+func (api *API) outputIDFromName(bucket, name string) (id string, err error) {
+	outputs, err := api.ListOutputs(&OutputListOptions{
+		Bucket: bucket,
+	})
+	if err != nil {
+		return
+	}
+	for _, b := range outputs {
+		if b.Name == name {
+			return b.ID, nil
+		}
+	}
+	return "", ErrNoSuchOutput
 }
