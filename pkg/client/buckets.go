@@ -130,8 +130,8 @@ func (api *API) CreateBucket(options *BucketCreateOptions) (*Bucket, error) {
 	return &bucket, nil
 }
 
-// BucketUpdate updates a Bucket on the server and returns the updated object.
-func (api *API) BucketUpdate(options *Bucket) (*Bucket, error) {
+// UpdateBucket updates a Bucket on the server and returns the updated object.
+func (api *API) UpdateBucket(options *Bucket) (*Bucket, error) {
 	bucketID, err := api.ensureBucketID(options.ID)
 	if err != nil {
 		return nil, err
@@ -150,8 +150,8 @@ func (api *API) BucketUpdate(options *Bucket) (*Bucket, error) {
 	return &bucket, nil
 }
 
-// BucketDelete removes a Bucket by its reference.
-func (api *API) BucketDelete(options *BucketDeleteOptions) error {
+// DeleteBucket removes a Bucket by its reference.
+func (api *API) DeleteBucket(options *BucketDeleteOptions) error {
 
 	bucketID, err := api.ensureBucketID(options.Ref)
 	if err != nil {
