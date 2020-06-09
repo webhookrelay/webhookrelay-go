@@ -25,6 +25,7 @@ type Bucket struct {
 	Outputs     []Output   `json:"outputs"` // readonly
 }
 
+// MarshalJSON helper to marshal unix time
 func (b *Bucket) MarshalJSON() ([]byte, error) {
 	type Alias Bucket
 	return json.Marshal(&struct {
@@ -38,6 +39,7 @@ func (b *Bucket) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// UnmarshalJSON helper to unmarshal unix time
 func (b *Bucket) UnmarshalJSON(data []byte) error {
 	type Alias Bucket
 	aux := &struct {
@@ -115,8 +117,8 @@ func (api *API) GetBucket(ref string) (*Bucket, error) {
 }
 
 // CreateBucket creates a Bucket and returns the newly object.
-func (api *API) CreateBucket(opts *BucketCreateOptions) (*Bucket, error) {
-	resp, err := api.makeRequest("POST", "/buckets", opts)
+func (api *API) CreateBucket(options *BucketCreateOptions) (*Bucket, error) {
+	resp, err := api.makeRequest("POST", "/buckets", options)
 	if err != nil {
 		return nil, err
 	}
@@ -129,14 +131,14 @@ func (api *API) CreateBucket(opts *BucketCreateOptions) (*Bucket, error) {
 }
 
 // BucketUpdate updates a Bucket on the server and returns the updated object.
-func (api *API) BucketUpdate(opts *Bucket) (*Bucket, error) {
-	bucketID, err := api.ensureBucketID(opts.ID)
+func (api *API) BucketUpdate(options *Bucket) (*Bucket, error) {
+	bucketID, err := api.ensureBucketID(options.ID)
 	if err != nil {
 		return nil, err
 	}
-	opts.ID = bucketID
+	options.ID = bucketID
 
-	resp, err := api.makeRequest("PUT", "/buckets/"+opts.ID, opts)
+	resp, err := api.makeRequest("PUT", "/buckets/"+options.ID, options)
 	if err != nil {
 		return nil, err
 	}
@@ -149,9 +151,9 @@ func (api *API) BucketUpdate(opts *Bucket) (*Bucket, error) {
 }
 
 // BucketDelete removes a Bucket by its reference.
-func (api *API) BucketDelete(opts *BucketDeleteOptions) error {
+func (api *API) BucketDelete(options *BucketDeleteOptions) error {
 
-	bucketID, err := api.ensureBucketID(opts.Ref)
+	bucketID, err := api.ensureBucketID(options.Ref)
 	if err != nil {
 		return err
 	}
