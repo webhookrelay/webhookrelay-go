@@ -102,7 +102,7 @@ func (api *API) DeleteDomainReservation(options *DomainDeleteOptions) error {
 		}
 	}
 
-	_, err := api.makeRequest("DELETE", "/domains/"+options.Ref, nil)
+	_, err := api.makeRequest(http.MethodDelete, "/domains/"+options.Ref, nil)
 	if err != nil {
 		return err
 	}
