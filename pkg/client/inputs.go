@@ -107,13 +107,13 @@ func (api *API) allInputList(opts *BucketListOptions) ([]*Input, error) {
 }
 
 // CreateInput creates a Input and returns the new object.
-func (api *API) CreateInput(opts *Input) (*Input, error) {
-	bucketID, err := api.ensureBucketID(opts.BucketID)
+func (api *API) CreateInput(options *Input) (*Input, error) {
+	bucketID, err := api.ensureBucketID(options.BucketID)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := api.makeRequest("POST", "/buckets/"+bucketID+"/inputs", opts)
+	resp, err := api.makeRequest("POST", "/buckets/"+bucketID+"/inputs", options)
 	if err != nil {
 		return nil, err
 	}
@@ -124,18 +124,26 @@ func (api *API) CreateInput(opts *Input) (*Input, error) {
 }
 
 // UpdateInput updates existing input
-func (api *API) UpdateInput(opts *Input) (*Input, error) {
-	bucketID, err := api.ensureBucketID(opts.BucketID)
+func (api *API) UpdateInput(options *Input) (*Input, error) {
+	if options.BucketID == "" {
+		return nil, fmt.Errorf("bucket not specified")
+	}
+
+	if options.ID == "" && options.Name == "" {
+		return nil, fmt.Errorf("either input ID or name has to be specified")
+	}
+
+	bucketID, err := api.ensureBucketID(options.BucketID)
 	if err != nil {
 		return nil, err
 	}
 
-	inputID, err := api.ensureInputID(opts.Name)
+	inputID, err := api.ensureInputID(options.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := api.makeRequest("PUT", "/buckets/"+bucketID+"/inputs/"+inputID, opts)
+	resp, err := api.makeRequest("PUT", "/buckets/"+bucketID+"/inputs/"+inputID, options)
 	if err != nil {
 		return nil, err
 	}
@@ -143,6 +151,38 @@ func (api *API) UpdateInput(opts *Input) (*Input, error) {
 	var input Input
 	err = json.Unmarshal(resp, &input)
 	return &input, nil
+}
+
+// InputDeleteOptions delete options
+type InputDeleteOptions struct {
+	Bucket string
+	Input  string
+}
+
+// DeleteInput removes input. If public input is used by the UUID, beware that after deleting
+// an input you will not be able to recreate another one with the same ID.
+func (api *API) DeleteInput(options *InputDeleteOptions) error {
+
+	if options.Bucket == "" {
+		return fmt.Errorf("bucket not specified")
+	}
+
+	if options.Input == "" {
+		return fmt.Errorf("input not specified")
+	}
+
+	bucketID, err := api.ensureBucketID(options.Bucket)
+	if err != nil {
+		return err
+	}
+
+	inputID, err := api.ensureInputID(options.Input)
+	if err != nil {
+		return err
+	}
+
+	_, err = api.makeRequest("DELETE", "/buckets/"+bucketID+"/inputs/"+inputID, nil)
+	return err
 }
 
 // ensureInputID - takes name/id and always returns ID (when it not fails)
