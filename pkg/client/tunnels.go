@@ -1,3 +1,5 @@
+//go:generate jsonenums -type=TunnelMode
+//go:generate jsonenums -type=TunnelProto
 package client
 
 import (
