@@ -1,5 +1,7 @@
 # Webhook Relay API Go client
 
+> This library is currently actively developed so the API might change a little bit.
+
 ## Features
 
 Currently available features:
