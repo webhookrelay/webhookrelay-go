@@ -33,6 +33,19 @@ type Input struct {
 	Description        string `json:"description"`
 }
 
+func (i *Input) String() string {
+	return fmt.Sprintf("%s [%s]", i.Name, i.EndpointURL())
+}
+
+// EndpointURL returns default input URL. If CustomDomain is set (all new inputs from 2020 06 01 are getting them),
+// then it's this domain with path prefix, otherwise it's the URL based on the input ID
+func (i *Input) EndpointURL() string {
+	if i.CustomDomain != "" {
+		return "https://" + i.CustomDomain + i.PathPrefix
+	}
+	return "https://my.webhookrelay.com/v1/webhooks/" + i.ID
+}
+
 // MarshalJSON helper to change time into unix
 func (i *Input) MarshalJSON() ([]byte, error) {
 	type Alias Input

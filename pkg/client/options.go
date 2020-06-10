@@ -8,26 +8,26 @@ import (
 // Option is a functional option for configuring the API client.
 type Option func(*API) error
 
-// HTTPClient accepts a custom *http.Client for making API calls.
-func HTTPClient(client *http.Client) Option {
+// WithHTTPClient accepts a custom *http.Client for making API calls.
+func WithHTTPClient(client *http.Client) Option {
 	return func(api *API) error {
 		api.httpClient = client
 		return nil
 	}
 }
 
-// Headers allows you to set custom HTTP headers when making API calls (e.g. for
+// WithHeaders allows you to set custom HTTP headers when making API calls (e.g. for
 // satisfying HTTP proxies, or for debugging).
-func Headers(headers http.Header) Option {
+func WithHeaders(headers http.Header) Option {
 	return func(api *API) error {
 		api.headers = headers
 		return nil
 	}
 }
 
-// UsingRetryPolicy applies a non-default number of retries and min/max retry delays
+// WithRetryPolicy applies a non-default number of retries and min/max retry delays
 // This will be used when the client exponentially backs off after errored requests
-func UsingRetryPolicy(maxRetries int, minRetryDelaySecs int, maxRetryDelaySecs int) Option {
+func WithRetryPolicy(maxRetries int, minRetryDelaySecs int, maxRetryDelaySecs int) Option {
 	// seconds is very granular for a minimum delay - but this is only in case of failure
 	return func(api *API) error {
 		api.retryPolicy = RetryPolicy{
@@ -39,20 +39,20 @@ func UsingRetryPolicy(maxRetries int, minRetryDelaySecs int, maxRetryDelaySecs i
 	}
 }
 
-// UserAgent can be set if you want to send a software name and version for HTTP access logs.
+// WithUserAgent can be set if you want to send a software name and version for HTTP access logs.
 // It is recommended to set it in order to help future Customer Support diagnostics
 // and prevent collateral damage by sharing generic User-Agent string with abusive users.
 // E.g. "my-software/1.2.3". By default generic Go User-Agent is used.
-func UserAgent(userAgent string) Option {
+func WithUserAgent(userAgent string) Option {
 	return func(api *API) error {
 		api.UserAgent = userAgent
 		return nil
 	}
 }
 
-// UsingLogger can be set if you want to get log output from this API instance
+// WithLogger can be set if you want to get log output from this API instance
 // By default no log output is emitted
-func UsingLogger(logger Logger) Option {
+func WithLogger(logger Logger) Option {
 	return func(api *API) error {
 		api.logger = logger
 		return nil
