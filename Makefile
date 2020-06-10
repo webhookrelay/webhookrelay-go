@@ -1,6 +1,6 @@
 # generate jsonenums for APIs
 generate:
-	cd pkg/client && go generate
+	go generate
 
 # generate proto file for Functions module
 proto:
