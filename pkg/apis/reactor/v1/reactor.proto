@@ -1,7 +1,7 @@
 syntax = "proto3";
 package github.com.webhookrelay.apis.reactor_v1;
 
-option go_package = "github.com/webhookrelay/webhookrelay-go/pkg/apis/reactor/v1";
+option go_package = "v1";
 
 message Function {
   // ID of the function
