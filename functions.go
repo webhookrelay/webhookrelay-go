@@ -34,6 +34,7 @@ type CreateFunctionRequest struct {
 	Payload io.Reader
 }
 
+// UpdateFunctionRequest is used when updating an existing function
 type UpdateFunctionRequest struct {
 	ID      string
 	Name    string
@@ -123,7 +124,7 @@ func (api *API) CreateFunction(opts *CreateFunctionRequest) (*Function, error) {
 		Driver:  opts.Driver,
 		Payload: base64.StdEncoding.EncodeToString(functionBody),
 	}
-
+	// TODO: consider splitting function uploading and creation into separate reqs
 	resp, err := api.makeRequest("POST", "/functions", createOpts)
 	if err != nil {
 		return nil, err
@@ -137,14 +138,32 @@ func (api *API) CreateFunction(opts *CreateFunctionRequest) (*Function, error) {
 }
 
 // UpdateFunction - update function
-func (api *API) UpdateFunction(f *FunctionRequest) (*Function, error) {
+func (api *API) UpdateFunction(options *UpdateFunctionRequest) (*Function, error) {
 
-	fID, err := api.ensureFunctionID(f.ID)
-	if err != nil {
-		return nil, err
+	if options.ID != "" {
+		// ok
+	} else if options.Name != "" {
+		fID, err := api.ensureFunctionID(options.ID)
+		if err != nil {
+			return nil, err
+		}
+		options.ID = fID
+	} else {
+		return nil, fmt.Errorf("either name or ID has to be set")
 	}
-	f.ID = fID
-	resp, err := api.makeRequest("PUT", "/functions/"+f.ID, f)
+
+	functionBody, err := ioutil.ReadAll(options.Payload)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read function body")
+	}
+
+	updateOpts := &FunctionRequest{
+		Name:    options.Name,
+		Driver:  options.Driver,
+		Payload: base64.StdEncoding.EncodeToString(functionBody),
+	}
+
+	resp, err := api.makeRequest("PUT", "/functions/"+options.ID, updateOpts)
 	if err != nil {
 		return nil, err
 	}
