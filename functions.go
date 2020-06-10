@@ -1,8 +1,11 @@
 package webhookrelay
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 
 	"github.com/pkg/errors"
@@ -22,6 +25,20 @@ type FunctionRequest struct {
 	Name    string `json:"name"`
 	Payload string `json:"payload"`
 	Driver  string `json:"driver"`
+}
+
+// CreateFunctionRequest is used when creating a new function
+type CreateFunctionRequest struct {
+	Name    string
+	Driver  string
+	Payload io.Reader
+}
+
+type UpdateFunctionRequest struct {
+	ID      string
+	Name    string
+	Driver  string
+	Payload io.Reader
 }
 
 // InvokeFunctionRequest is a function invoke payload
@@ -94,9 +111,20 @@ func (api *API) GetFunction(ref string) (*Function, error) {
 }
 
 // CreateFunction - create new function
-func (api *API) CreateFunction(opts *FunctionRequest) (*Function, error) {
+func (api *API) CreateFunction(opts *CreateFunctionRequest) (*Function, error) {
 
-	resp, err := api.makeRequest("POST", "/functions", opts)
+	functionBody, err := ioutil.ReadAll(opts.Payload)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to read function body")
+	}
+
+	createOpts := &FunctionRequest{
+		Name:    opts.Name,
+		Driver:  opts.Driver,
+		Payload: base64.StdEncoding.EncodeToString(functionBody),
+	}
+
+	resp, err := api.makeRequest("POST", "/functions", createOpts)
 	if err != nil {
 		return nil, err
 	}
