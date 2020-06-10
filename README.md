@@ -1,5 +1,7 @@
 # Webhook Relay API Go client
 
+[![GoDoc](https://img.shields.io/badge/godoc-reference-5673AF.svg?style=flat-square)](https://godoc.org/github.com/webhookrelay/webhookrelay-go)
+
 > This library is currently actively developed so the API might change a little bit.
 
 ## Features
