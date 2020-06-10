@@ -10,6 +10,7 @@ Currently available features:
 - [x] Buckets
 - [x] Inputs
 - [x] Outputs
+- [ ] Output rules
 - [x] Domain reservations
 - [x] Tokens
 - [x] Functions
