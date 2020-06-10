@@ -22,6 +22,10 @@ You need a working [Go](https://golang.org/) environment.
 go get github.com/webhookrelay/webhookrelay-go
 ```
 
+## Authentication
+
+To authenticate, you will need to first get an API token key & secret pair [here](https://my.webhookrelay.com/tokens).
+
 ## Usage
 
 ```golang
