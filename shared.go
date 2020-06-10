@@ -1,5 +1,5 @@
 //go:generate jsonenums -type=AuthType
-package client
+package webhookrelay
 
 // AuthType is a tunnel authentication type
 type AuthType int

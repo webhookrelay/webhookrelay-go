@@ -1,4 +1,4 @@
-package client
+package webhookrelay
 
 import "errors"
 

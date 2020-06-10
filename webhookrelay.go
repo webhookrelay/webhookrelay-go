@@ -1,4 +1,4 @@
-package client
+package webhookrelay
 
 import (
 	"bytes"
@@ -24,6 +24,23 @@ const (
 	// AuthToken specifies that we should authenticate with an API key & secret
 	AuthToken = 1 << iota
 )
+
+// New creates a new Webhook Relay v1 API client.
+func New(key, secret string, opts ...Option) (*API, error) {
+	if key == "" || secret == "" {
+		return nil, ErrEmptyCredentials
+	}
+
+	api, err := newClient(opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	api.APIKey = key
+	api.APISecret = secret
+
+	return api, nil
+}
 
 // API holds the configuration for the current API client. A client should not
 // be modified concurrently.
@@ -69,23 +86,6 @@ func newClient(opts ...Option) (*API, error) {
 	if api.httpClient == nil {
 		api.httpClient = http.DefaultClient
 	}
-
-	return api, nil
-}
-
-// New creates a new Webhook Relay v1 API client.
-func New(key, secret string, opts ...Option) (*API, error) {
-	if key == "" || secret == "" {
-		return nil, ErrEmptyCredentials
-	}
-
-	api, err := newClient(opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	api.APIKey = key
-	api.APISecret = secret
 
 	return api, nil
 }

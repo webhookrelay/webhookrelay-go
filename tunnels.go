@@ -1,6 +1,6 @@
 //go:generate jsonenums -type=TunnelMode
 //go:generate jsonenums -type=TunnelProto
-package client
+package webhookrelay
 
 import (
 	"encoding/json"
