@@ -179,6 +179,93 @@ func (api *API) ListTunnels(options *TunnelListOptions) ([]*Tunnel, error) {
 	return tunnels, nil
 }
 
+// GetTunnel gets tunnel by ID, name or hostname
+func (api *API) GetTunnel(ref string) (*Tunnel, error) {
+
+	ref, err := api.ensureTunnelID(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := api.makeRequest(http.MethodGet, "/tunnels/"+ref, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result Tunnel
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// CreateTunnel creates new tunnel
+func (api *API) CreateTunnel(options *Tunnel) (*Tunnel, error) {
+	resp, err := api.makeRequest(http.MethodPost, "/tunnels", options)
+	if err != nil {
+		return nil, err
+	}
+
+	var result Tunnel
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// UpdateTunnel updates existing tunnel
+func (api *API) UpdateTunnel(options *Tunnel) (*Tunnel, error) {
+	tunnelID, err := api.ensureTunnelID(options.ID)
+	if err != nil {
+		return nil, err
+	}
+	options.ID = tunnelID
+
+	resp, err := api.makeRequest(http.MethodPut, "/tunnels/"+options.ID, options)
+	if err != nil {
+		return nil, err
+	}
+
+	var result Tunnel
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// TunnelDeleteOptions delete options
+type TunnelDeleteOptions struct {
+	ID   string
+	Name string
+}
+
+// DeleteTunnel delete tunnel by ID or name
+func (api *API) DeleteTunnel(options *TunnelDeleteOptions) error {
+
+	if options.ID == "" && options.Name == "" {
+		return fmt.Errorf("name or ID must be supplied")
+	}
+
+	var identifier string
+	if options.ID != "" {
+		identifier = options.ID
+	} else {
+		identifier = options.Name
+	}
+
+	tunnelID, err := api.ensureTunnelID(identifier)
+	if err != nil {
+		return err
+	}
+
+	_, err = api.makeRequest("DELETE", "/tunnels/"+tunnelID, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (api *API) ensureTunnelID(ref string) (string, error) {
 	if !IsUUID(ref) {
 		id, err := api.tunnelIDFromName(ref)
