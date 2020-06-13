@@ -11,13 +11,17 @@ import (
 
 // AccessToken - auth tokens, can be created for the agents
 type AccessToken struct {
-	ID          string    `json:"id"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	LastLogin   string    `json:"last_login"`
-	Description string    `json:"description"`
-
-	Active bool `json:"active"`
+	ID          string            `json:"id"`         // read-only
+	CreatedAt   time.Time         `json:"created_at"` // read-only
+	UpdatedAt   time.Time         `json:"updated_at"` // read-only
+	LastLogin   string            `json:"last_login"` // read-only
+	Description string            `json:"description"`
+	Scopes      AccessTokenScopes `json:"scopes"`
+	// APIAccess allows to enable/disabled API access. Tokens that have disabled
+	// access can be used to subscribe to webhooks or tunnel connections.
+	// Defaults to "enabled"
+	APIAccess AccessTokenAPIAccess `json:"api_access"`
+	Active    bool                 `json:"active"`
 }
 
 // MarshalJSON helper to marshal unix time
@@ -58,8 +62,26 @@ type AccessTokenCreateResponse struct {
 	Secret string `json:"secret"`
 }
 
+// AccessTokenAPIAccess - enables/disables API access for the token
+type AccessTokenAPIAccess string
+
+// Available API access token status
+const (
+	AccessTokenAPIAccessEnabled  AccessTokenAPIAccess = "enabled"
+	AccessTokenAPIAccessDisabled AccessTokenAPIAccess = "disabled"
+)
+
 // AccessTokenCreateOptions - used to create an access token
 type AccessTokenCreateOptions struct {
+	Description string               `json:"description"`
+	Scopes      AccessTokenScopes    `json:"scopes"`
+	APIAccess   AccessTokenAPIAccess `json:"api_access"`
+}
+
+// AccessTokenScopes define optional limits for tokens
+type AccessTokenScopes struct {
+	Tunnels []string `json:"tunnels"`
+	Buckets []string `json:"buckets"`
 }
 
 // AccessTokenListOptions - TODO
@@ -109,6 +131,24 @@ func (api *API) DeleteAccessToken(options *AccessTokenDeleteOptions) error {
 		return fmt.Errorf("invalid access token ID '%s'", options.ID)
 	}
 
-	_, err := api.makeRequest("DELETE", "/buckets/"+options.ID, nil)
+	_, err := api.makeRequest(http.MethodDelete, "/tokens/"+options.ID, nil)
 	return err
+}
+
+// UpdateAccessToken updates access token scopes, description and enabled/disable API access
+func (api *API) UpdateAccessToken(options *AccessToken) (*AccessToken, error) {
+	if !IsUUID(options.ID) {
+		return nil, fmt.Errorf("invalid access token ID '%s'", options.ID)
+	}
+
+	resp, err := api.makeRequest(http.MethodPut, "/tokens/"+options.ID, options)
+	if err != nil {
+		return nil, err
+	}
+
+	var result AccessToken
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
