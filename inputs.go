@@ -98,7 +98,7 @@ func (api *API) ListInputs(options *InputListOptions) ([]*Input, error) {
 
 	var inputs []*Input
 	for idx := range bucket.Inputs {
-		inputs = append(inputs, &bucket.Inputs[idx])
+		inputs = append(inputs, bucket.Inputs[idx])
 	}
 
 	return inputs, nil
@@ -113,7 +113,7 @@ func (api *API) allInputList(opts *BucketListOptions) ([]*Input, error) {
 	var inputs []*Input
 	for idx := range buckets {
 		for bIdx := range buckets[idx].Inputs {
-			inputs = append(inputs, &buckets[idx].Inputs[bIdx])
+			inputs = append(inputs, buckets[idx].Inputs[bIdx])
 		}
 	}
 

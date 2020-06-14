@@ -21,8 +21,8 @@ type Bucket struct {
 	Stream      bool       `json:"stream"`
 	Ephemeral   bool       `json:"ephemeral"`
 	Auth        BucketAuth `json:"auth"`
-	Inputs      []Input    `json:"inputs"`  // readonly
-	Outputs     []Output   `json:"outputs"` // readonly
+	Inputs      []*Input   `json:"inputs"`  // readonly
+	Outputs     []*Output  `json:"outputs"` // readonly
 }
 
 // MarshalJSON helper to marshal unix time

@@ -79,7 +79,7 @@ func (api *API) ListOutputs(options *OutputListOptions) ([]*Output, error) {
 
 	var outputs []*Output
 	for idx := range bucket.Outputs {
-		outputs = append(outputs, &bucket.Outputs[idx])
+		outputs = append(outputs, bucket.Outputs[idx])
 	}
 
 	return outputs, nil
@@ -94,7 +94,7 @@ func (api *API) allOutputList(options *BucketListOptions) ([]*Output, error) {
 	var outputs []*Output
 	for idx := range buckets {
 		for bIdx := range buckets[idx].Outputs {
-			outputs = append(outputs, &buckets[idx].Outputs[bIdx])
+			outputs = append(outputs, buckets[idx].Outputs[bIdx])
 		}
 	}
 
