@@ -61,3 +61,39 @@ message Response {
   bytes  body     = 2;
   map<string, HeaderValue> header = 3;
 }
+
+// configuration 
+
+message ListConfigRequest {
+  string accountId  = 1;
+  string functionId = 2;
+}
+
+message ListConfigResponse {
+  repeated Variable variables = 1;
+}
+
+message DeleteVariableRequest {
+  string accountId  = 1;
+  string key        = 2;
+  string functionId = 3;
+}
+
+message DeleteConfigRequest {
+  string accountId  = 1;
+  string functionId = 2;
+}
+
+message DeleteVariableResponse {}
+
+// Variable - variables can be used by functions to access some specific configuration
+// during execution
+message Variable {
+  string key                       = 1 [json_name="key"];
+  string accountId                 = 2 [json_name="account_id"];
+  int64 created                    = 3 [json_name="created"];
+  int64 updated                    = 4 [json_name="updated"];  
+  string value                     = 5 [json_name="value"];
+  string functionId                = 6 [json_name="function_id"]; // required
+  repeated string configurationIds = 7 [json_name="configuration_ids"]; // which config IDs should have access (by default all) 
+}
