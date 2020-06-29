@@ -13,6 +13,10 @@ var (
 	ErrNoSuchInput = errors.New("no such input")
 )
 
+// AnyResponseFromOutput indicates that the input should return response from
+// whichever output responds first.
+const AnyResponseFromOutput = "anyOutput"
+
 // Input - webhook inputs are used to create endpoints which are then used
 // by remote systems
 type Input struct {
