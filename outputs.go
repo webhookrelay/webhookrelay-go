@@ -23,6 +23,7 @@ type Output struct {
 	FunctionID  string              `json:"function_id"`
 	Headers     map[string][]string `json:"headers"`
 	Destination string              `json:"destination"`
+	Disabled    bool                `json:"disabled"` // Allows disabling forwarding to specific output
 	Internal    bool                `json:"internal"`
 	Timeout     int                 `json:"timeout"` // Destination response timeout
 	Description string              `json:"description"`
