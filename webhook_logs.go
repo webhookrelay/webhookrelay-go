@@ -43,8 +43,7 @@ func (s RequestStatus) String() string {
 	}
 }
 
-// Log - stination defines where particular request was going with
-// output ID and additional stats
+// Log - received webhook event
 type Log struct {
 	ID        string    `json:"id"`
 	CreatedAt time.Time `json:"created_at"`
@@ -173,4 +172,28 @@ func (api *API) GetWebhookLog(id string) (*Log, error) {
 	}
 
 	return &webhookLog, nil
+}
+
+// WebhookLogsUpdateRequest is used to update Webhook Relay request if used
+// for example with WebSocket transponder (it becomes client's responsibility
+// to do this action). Response information must be sent within 10 seconds
+// of receiving the webhook.
+type WebhookLogsUpdateRequest struct {
+	ID              string        `json:"id"`
+	StatusCode      int           `json:"status_code"`
+	ResponseBody    []byte        `json:"response_body"`
+	ResponseHeaders Headers       `json:"response_headers" `
+	Status          RequestStatus `json:"status"`
+	Retries         int           `json:"retries"`
+}
+
+// UpdateWebhookLog - update webhook log response body, headers and status code.
+func (api *API) UpdateWebhookLog(updateRequest *WebhookLogsUpdateRequest) error {
+
+	_, err := api.makeRequest(http.MethodPut, "/logs/"+updateRequest.ID, updateRequest)
+	if err != nil {
+		return errors.Wrap(err, errMakeRequestError)
+	}
+
+	return nil
 }
