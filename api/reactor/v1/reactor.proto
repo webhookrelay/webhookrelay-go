@@ -1,5 +1,5 @@
 syntax = "proto3";
-package github.com.webhookrelay.apis.reactor_v1;
+package github.com.webhookrelay.api.reactor_v1;
 
 option go_package = "v1";
 
