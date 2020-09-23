@@ -14,6 +14,8 @@ Currently available features:
 - [x] Domain reservations
 - [x] Tokens
 - [x] Functions
+- [x] Function config variables
+- [x] Invoke function
 - [ ] Function execution logs
 - [x] Tunnels
 - [x] Regions

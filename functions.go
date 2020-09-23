@@ -10,7 +10,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	reactor_v1 "github.com/webhookrelay/webhookrelay-go/pkg/apis/reactor/v1"
+	reactor_v1 "github.com/webhookrelay/webhookrelay-go/api/reactor/v1"
 )
 
 // Function is an alias to reactor_v1 pkg

@@ -24,9 +24,14 @@ type Output struct {
 	Headers     map[string][]string `json:"headers"`
 	Destination string              `json:"destination"`
 	Disabled    bool                `json:"disabled"` // Allows disabling forwarding to specific output
-	Internal    bool                `json:"internal"`
-	Timeout     int                 `json:"timeout"` // Destination response timeout
-	Description string              `json:"description"`
+	// LockPath ensures that the request path cannot be changed from what is
+	// specified in the destination. For example if request is coming to /v1/webhooks/xxx/github-jenkins,
+	// with lock path 'false' and destination 'http://localhost:8080' it would go to http://localhost:8080/github-jenkins.
+	// However, with lock path 'true', it will be sent to 'http://localhost:8080'
+	LockPath    bool   `json:"lock_path"`
+	Internal    bool   `json:"internal"`
+	Timeout     int    `json:"timeout"` // Destination response timeout
+	Description string `json:"description"`
 }
 
 // MarshalJSON helper to change time into unix
