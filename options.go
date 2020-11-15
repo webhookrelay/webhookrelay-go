@@ -16,6 +16,15 @@ func WithHTTPClient(client *http.Client) Option {
 	}
 }
 
+// WithAPIEndpointURL overrides default Webhook Relay API server address.
+// Default: "https://my.webhookrelay.com/v1"
+func WithAPIEndpointURL(apiBaseURL string) Option {
+	return func(api *API) error {
+		api.BaseURL = apiBaseURL
+		return nil
+	}
+}
+
 // WithHeaders allows you to set custom HTTP headers when making API calls (e.g. for
 // satisfying HTTP proxies, or for debugging).
 func WithHeaders(headers http.Header) Option {
