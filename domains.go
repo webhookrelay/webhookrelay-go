@@ -34,12 +34,12 @@ func (d *Domain) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// UnmarshalJSON helper to unmarshal unix time
+// UnmarshalJSON helper to unmarshal unix time or RFC3339 string
 func (d *Domain) UnmarshalJSON(data []byte) error {
 	type Alias Domain
 	aux := &struct {
-		CreatedAt int64 `json:"created_at"`
-		UpdatedAt int64 `json:"updated_at"`
+		CreatedAt json.RawMessage `json:"created_at"`
+		UpdatedAt json.RawMessage `json:"updated_at"`
 		*Alias
 	}{
 		Alias: (*Alias)(d),
@@ -47,8 +47,16 @@ func (d *Domain) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-	d.CreatedAt = time.Unix(aux.CreatedAt, 0)
-	d.UpdatedAt = time.Unix(aux.UpdatedAt, 0)
+
+	var err error
+	d.CreatedAt, err = parseTime(aux.CreatedAt)
+	if err != nil {
+		return err
+	}
+	d.UpdatedAt, err = parseTime(aux.UpdatedAt)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

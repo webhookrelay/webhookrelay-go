@@ -38,12 +38,12 @@ func (t *AccessToken) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// UnmarshalJSON helper to unmarshal unix time
+// UnmarshalJSON helper to unmarshal unix time or RFC3339 string
 func (t *AccessToken) UnmarshalJSON(data []byte) error {
 	type Alias AccessToken
 	aux := &struct {
-		CreatedAt int64 `json:"created_at"`
-		UpdatedAt int64 `json:"updated_at"`
+		CreatedAt json.RawMessage `json:"created_at"`
+		UpdatedAt json.RawMessage `json:"updated_at"`
 		*Alias
 	}{
 		Alias: (*Alias)(t),
@@ -51,8 +51,16 @@ func (t *AccessToken) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-	t.CreatedAt = time.Unix(aux.CreatedAt, 0)
-	t.UpdatedAt = time.Unix(aux.UpdatedAt, 0)
+
+	var err error
+	t.CreatedAt, err = parseTime(aux.CreatedAt)
+	if err != nil {
+		return err
+	}
+	t.UpdatedAt, err = parseTime(aux.UpdatedAt)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
