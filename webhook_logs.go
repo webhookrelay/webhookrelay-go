@@ -91,12 +91,12 @@ func (l *Log) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// UnmarshalJSON parses unix time
+// UnmarshalJSON parses unix time or RFC3339 string
 func (l *Log) UnmarshalJSON(data []byte) error {
 	type Alias Log
 	aux := &struct {
-		CreatedAt int64 `json:"created_at"`
-		UpdatedAt int64 `json:"updated_at"`
+		CreatedAt json.RawMessage `json:"created_at"`
+		UpdatedAt json.RawMessage `json:"updated_at"`
 		*Alias
 	}{
 		Alias: (*Alias)(l),
@@ -104,8 +104,16 @@ func (l *Log) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-	l.CreatedAt = time.Unix(aux.CreatedAt, 0)
-	l.UpdatedAt = time.Unix(aux.UpdatedAt, 0)
+
+	var err error
+	l.CreatedAt, err = parseTime(aux.CreatedAt)
+	if err != nil {
+		return err
+	}
+	l.UpdatedAt, err = parseTime(aux.UpdatedAt)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

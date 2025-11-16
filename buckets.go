@@ -13,16 +13,20 @@ import (
 // should probably be one Input per Bucket to make it easy to manage.
 // Buckets control policies such as retries, manipulation, logs, rate limitting
 type Bucket struct {
-	ID          string     `json:"id"`         // readonly
-	CreatedAt   time.Time  `json:"created_at"` // readonly
-	UpdatedAt   time.Time  `json:"updated_at"` // readonly
-	Name        string     `json:"name"`
-	Description string     `json:"description"`
-	Stream      bool       `json:"stream"`
-	Ephemeral   bool       `json:"ephemeral"`
-	Auth        BucketAuth `json:"auth"`
-	Inputs      []*Input   `json:"inputs"`  // readonly
-	Outputs     []*Output  `json:"outputs"` // readonly
+	ID          string    `json:"id"`         // readonly
+	CreatedAt   time.Time `json:"created_at"` // readonly
+	UpdatedAt   time.Time `json:"updated_at"` // readonly
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	Stream      bool      `json:"stream"`
+	Ephemeral   bool      `json:"ephemeral"`
+	Suspended   bool      `json:"suspended"`
+	// LargeWebhooks - if set, we allow larger than 3MB webhooks
+	// to be sent to the bucket. This is useful for large file uploads
+	LargeWebhooks bool       `json:"large_webhooks"`
+	Auth          BucketAuth `json:"auth"`
+	Inputs        []*Input   `json:"inputs"`  // readonly
+	Outputs       []*Output  `json:"outputs"` // readonly
 }
 
 // MarshalJSON helper to marshal unix time
@@ -39,12 +43,12 @@ func (b *Bucket) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// UnmarshalJSON helper to unmarshal unix time
+// UnmarshalJSON helper to unmarshal unix time or RFC3339 string
 func (b *Bucket) UnmarshalJSON(data []byte) error {
 	type Alias Bucket
 	aux := &struct {
-		CreatedAt int64 `json:"created_at"`
-		UpdatedAt int64 `json:"updated_at"`
+		CreatedAt json.RawMessage `json:"created_at"`
+		UpdatedAt json.RawMessage `json:"updated_at"`
 		*Alias
 	}{
 		Alias: (*Alias)(b),
@@ -52,8 +56,16 @@ func (b *Bucket) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-	b.CreatedAt = time.Unix(aux.CreatedAt, 0)
-	b.UpdatedAt = time.Unix(aux.UpdatedAt, 0)
+
+	var err error
+	b.CreatedAt, err = parseTime(aux.CreatedAt)
+	if err != nil {
+		return err
+	}
+	b.UpdatedAt, err = parseTime(aux.UpdatedAt)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

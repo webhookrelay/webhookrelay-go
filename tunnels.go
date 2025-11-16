@@ -143,12 +143,12 @@ func (t *Tunnel) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// UnmarshalJSON unamrshal unix time
+// UnmarshalJSON unmarshal unix time or RFC3339 string
 func (t *Tunnel) UnmarshalJSON(data []byte) error {
 	type Alias Tunnel
 	aux := &struct {
-		CreatedAt int64 `json:"created_at"`
-		UpdatedAt int64 `json:"updated_at"`
+		CreatedAt json.RawMessage `json:"created_at"`
+		UpdatedAt json.RawMessage `json:"updated_at"`
 		*Alias
 	}{
 		Alias: (*Alias)(t),
@@ -156,8 +156,16 @@ func (t *Tunnel) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-	t.CreatedAt = time.Unix(aux.CreatedAt, 0)
-	t.UpdatedAt = time.Unix(aux.UpdatedAt, 0)
+
+	var err error
+	t.CreatedAt, err = parseTime(aux.CreatedAt)
+	if err != nil {
+		return err
+	}
+	t.UpdatedAt, err = parseTime(aux.UpdatedAt)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

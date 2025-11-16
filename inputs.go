@@ -64,12 +64,12 @@ func (i *Input) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// UnmarshalJSON helper to change time from unix
+// UnmarshalJSON helper to change time from unix or RFC3339 string
 func (i *Input) UnmarshalJSON(data []byte) error {
 	type Alias Input
 	aux := &struct {
-		CreatedAt int64 `json:"created_at"`
-		UpdatedAt int64 `json:"updated_at"`
+		CreatedAt json.RawMessage `json:"created_at"`
+		UpdatedAt json.RawMessage `json:"updated_at"`
 		*Alias
 	}{
 		Alias: (*Alias)(i),
@@ -77,8 +77,16 @@ func (i *Input) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-	i.CreatedAt = time.Unix(aux.CreatedAt, 0)
-	i.UpdatedAt = time.Unix(aux.UpdatedAt, 0)
+
+	var err error
+	i.CreatedAt, err = parseTime(aux.CreatedAt)
+	if err != nil {
+		return err
+	}
+	i.UpdatedAt, err = parseTime(aux.UpdatedAt)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
