@@ -4,23 +4,6 @@
 
 > This library is currently actively developed so the API might change a little bit.
 
-## Features
-
-Currently available features:
-- [x] Buckets
-- [x] Inputs
-- [x] Outputs
-- [ ] Output rules
-- [x] Domain reservations
-- [x] Tokens
-- [x] Functions
-- [x] Function config variables
-- [x] Invoke function
-- [ ] Function execution logs
-- [x] Tunnels
-- [x] Regions
-- [ ] Webhook Logs
-
 ## Installation
 
 You need a working [Go](https://golang.org/) environment. 
