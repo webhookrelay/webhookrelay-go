@@ -1,6 +1,3 @@
-# generate jsonenums for APIs
-generate:
-	go generate
 
 # generate proto file for Functions module
 proto:

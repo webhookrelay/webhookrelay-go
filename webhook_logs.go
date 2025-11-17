@@ -11,37 +11,16 @@ import (
 	"github.com/pkg/errors"
 )
 
+type RequestStatus string
+
 // default statuses
 const (
-	RequestStatusPreparing RequestStatus = iota
-	RequestStatusSent
-	RequestStatusFailed
-	RequestStatusStalled // if request destination wasn't listening - incoming requests will be stalled
-	RequestStatusReceived
-	RequestStatusRejected
+	RequestStatusReceived RequestStatus = "received"
+	RequestStatusSent     RequestStatus = "sent"
+	RequestStatusFailed   RequestStatus = "failed"
+	RequestStatusStalled  RequestStatus = "stalled"
+	RequestStatusRejected RequestStatus = "rejected"
 )
-
-// RequestStatus - available request statuses
-type RequestStatus int
-
-func (s RequestStatus) String() string {
-	switch s {
-	case RequestStatusPreparing:
-		return "preparing"
-	case RequestStatusSent:
-		return "sent"
-	case RequestStatusFailed:
-		return "failed"
-	case RequestStatusStalled:
-		return "stalled"
-	case RequestStatusReceived:
-		return "received"
-	case RequestStatusRejected:
-		return "rejected"
-	default:
-		return "unknown"
-	}
-}
 
 // Log - received webhook event
 type Log struct {
@@ -121,8 +100,8 @@ func (l *Log) UnmarshalJSON(data []byte) error {
 type WebhookLogsListOptions struct {
 	BucketID string
 	Status   RequestStatus
-	From     time.Time
-	To       time.Time
+	From     *time.Time
+	To       *time.Time
 	Limit    int
 	Offset   int
 }
@@ -157,10 +136,29 @@ func getQuery(options *WebhookLogsListOptions) string {
 
 	q := u.Query()
 
-	q.Add("bucket", options.BucketID)
-	q.Add("status", options.Status.String())
-	q.Add("limit", strconv.Itoa(options.Limit))
-	q.Add("offset", strconv.Itoa(options.Offset))
+	if options.BucketID != "" {
+		q.Add("bucket", options.BucketID)
+	}
+
+	if options.Status != "" {
+		q.Add("status", string(options.Status))
+	}
+
+	if options.From != nil {
+		q.Add("from", options.From.Format(time.RFC3339))
+	}
+
+	if options.To != nil {
+		q.Add("to", options.To.Format(time.RFC3339))
+	}
+
+	if options.Limit != 0 {
+		q.Add("limit", strconv.Itoa(options.Limit))
+	}
+
+	if options.Offset != 0 {
+		q.Add("offset", strconv.Itoa(options.Offset))
+	}
 
 	return q.Encode()
 }
