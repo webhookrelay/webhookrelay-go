@@ -36,6 +36,15 @@ func TestListBuckets(t *testing.T) {
 	buckets, err := client.ListBuckets(&BucketListOptions{})
 	assert.Nil(t, err)
 	assert.True(t, len(buckets) > 0)
+
+	// Look for "test-bucket" in the buckets
+	for _, bucket := range buckets {
+		if bucket.Name == "test-bucket" {
+			assert.True(t, true)
+			return
+		}
+	}
+	assert.False(t, true)
 }
 
 func TestListBuckets_TimeFormats(t *testing.T) {
