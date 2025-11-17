@@ -19,5 +19,8 @@ jobs:
         go-version: '1.24'
     
     - name: Run tests
+      env:
+        RELAY_KEY: ${{ secrets.RELAY_KEY }}
+        RELAY_SECRET: ${{ secrets.RELAY_SECRET }}
       run: go test -v -failfast ./...
 
