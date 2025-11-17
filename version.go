@@ -19,6 +19,14 @@ type VersionInfo struct {
 	Experimental  bool   `json:"experimental"`
 }
 
+// ServerVersion is an alias for VersionInfo for backward compatibility.
+type ServerVersion = VersionInfo
+
+// GetVersion returns the server's version and runtime info without requiring a context.
+func (api *API) GetVersion() (*ServerVersion, error) {
+	return api.ServerVersion(context.TODO())
+}
+
 // ServerVersion returns the server's version and runtime info.
 func (api *API) ServerVersion(ctx context.Context) (*VersionInfo, error) {
 

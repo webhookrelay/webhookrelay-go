@@ -7,10 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"math"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -89,6 +90,29 @@ func newClient(opts ...Option) (*API, error) {
 	}
 
 	return api, nil
+}
+
+func (api *API) Host() string {
+	u, err := url.Parse(api.BaseURL)
+	if err != nil {
+		return ""
+	}
+	host, _, _ := net.SplitHostPort(u.Host)
+	if host == "" {
+		return u.Host
+	}
+	return host
+}
+
+func (api *API) Scheme() string {
+	if strings.HasPrefix(api.BaseURL, "https://") {
+		return "https"
+	}
+	return "http"
+}
+
+func (api *API) Endpoint() string {
+	return api.BaseURL
 }
 
 // RetryPolicy specifies number of retries and min/max retry delays
@@ -171,7 +195,7 @@ func (api *API) makeRequestWithAuthTypeAndHeaders(ctx context.Context, method, u
 			// if we got a valid http response, try to read body so we can reuse the connection
 			// see https://golang.org/pkg/net/http/#Client.Do
 			if respErr == nil {
-				respBody, err = ioutil.ReadAll(resp.Body)
+				respBody, err = io.ReadAll(resp.Body)
 				resp.Body.Close()
 
 				respErr = errors.Wrap(err, "could not read response body")
@@ -183,7 +207,7 @@ func (api *API) makeRequestWithAuthTypeAndHeaders(ctx context.Context, method, u
 			}
 			continue
 		} else {
-			respBody, err = ioutil.ReadAll(resp.Body)
+			respBody, err = io.ReadAll(resp.Body)
 			defer resp.Body.Close()
 			if err != nil {
 				return nil, errors.Wrap(err, "could not read response body")
