@@ -91,7 +91,7 @@ func TestListBuckets_TimeFormats(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(buckets)
+		_ = json.NewEncoder(w).Encode(buckets)
 	}))
 	defer server.Close()
 
