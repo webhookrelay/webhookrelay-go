@@ -61,7 +61,7 @@ type API struct {
 
 // newClient provides shared logic
 func newClient(opts ...Option) (*API, error) {
-	silentLogger := log.New(ioutil.Discard, "", log.LstdFlags)
+	silentLogger := log.New(io.Discard, "", log.LstdFlags)
 
 	api := &API{
 		BaseURL:     apiURL,
