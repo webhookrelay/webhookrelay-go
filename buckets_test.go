@@ -8,12 +8,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 )
 
 func getIntegrationTestClient() (*API, error) {
-	return New(os.Getenv("RELAY_KEY"), os.Getenv("RELAY_SECRET"))
 
+	key := os.Getenv("RELAY_KEY")
+	secret := os.Getenv("RELAY_SECRET")
+
+	if key == "" {
+		return nil, errors.New("RELAY_KEY must be set")
+	}
+	if secret == "" {
+		return nil, errors.New("RELAY_SECRET must be set")
+	}
+
+	return New(key, secret)
 }
 
 func TestListBuckets(t *testing.T) {
