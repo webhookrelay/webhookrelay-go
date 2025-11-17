@@ -37,14 +37,17 @@ func TestListBuckets(t *testing.T) {
 	assert.Nil(t, err)
 	assert.True(t, len(buckets) > 0)
 
+	found := false
+
 	// Look for "test-bucket" in the buckets
 	for _, bucket := range buckets {
-		if bucket.Name == "test-bucket" {
-			assert.True(t, true)
-			return
+		if bucket.Name == "test-bucket-1" {
+			found = true
 		}
 	}
-	assert.False(t, true)
+
+	assert.True(t, found, "test-bucket-1 not found in buckets")
+
 }
 
 func TestListBuckets_TimeFormats(t *testing.T) {
