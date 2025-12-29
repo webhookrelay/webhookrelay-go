@@ -40,6 +40,8 @@ type Log struct {
 	Status          RequestStatus `json:"status"`
 	Retries         int           `json:"retries"`
 
+	IPAddress string `json:"ip_address"`
+
 	// request details
 	Headers   Headers `json:"headers"`
 	RawQuery  string  `json:"raw_query"`
@@ -191,6 +193,7 @@ type WebhookLogsUpdateRequest struct {
 	ResponseHeaders Headers       `json:"response_headers" `
 	Status          RequestStatus `json:"status"`
 	Retries         int           `json:"retries"`
+	DurationMs      uint64        `json:"duration_ms"`
 }
 
 // UpdateWebhookLog - update webhook log response body, headers and status code.
