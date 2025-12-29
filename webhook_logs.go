@@ -39,8 +39,8 @@ type Log struct {
 	ResponseHeaders Headers       `json:"response_headers" `
 	Status          RequestStatus `json:"status"`
 	Retries         int           `json:"retries"`
-
-	IPAddress string `json:"ip_address"`
+	DurationMs      uint64        `json:"duration_ms"`
+	IPAddress       string        `json:"ip_address"`
 
 	// request details
 	Headers   Headers `json:"headers"`
