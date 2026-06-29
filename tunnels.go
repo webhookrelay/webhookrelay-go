@@ -73,11 +73,16 @@ type Tunnel struct {
 	Auth         TunnelAuth   `json:"auth"`
 	Features     Features     `json:"features"`
 	IngressRules IngressRules `json:"ingress_rules"`
+	// AgentID is set by the ingress controller at runtime. readonly
+	AgentID string `json:"agent_id"`
 }
 
 // Features - optional tunnel features to enable different functionality
 type Features struct {
 	RewriteHostHeader string `json:"rewrite_host_header"`
+	// SkipInsecureVerify disables TLS certificate validation against the
+	// tunnel destination.
+	SkipInsecureVerify bool `json:"skip_insecure_verify"`
 }
 
 // GetURL helper

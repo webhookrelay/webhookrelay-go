@@ -34,7 +34,18 @@ type Input struct {
 	ResponseFromOutput string `json:"response_from_output"`
 	CustomDomain       string `json:"custom_domain"`
 	PathPrefix         string `json:"path_prefix"`
-	Description        string `json:"description"`
+	// StripPathPrefix strips the configured path prefix when forwarding the
+	// webhook (only relevant when PathPrefix/CustomDomain are set).
+	StripPathPrefix bool `json:"strip_path_prefix"`
+	// TLSVersion sets the MINIMUM accepted TLS version for this input's HTTPS
+	// endpoint (a floor, not a pin), e.g. "1.2". Empty means the default
+	// hardened policy.
+	TLSVersion string `json:"tls_version"`
+	// LegacyTLS widens the accepted handshake to TLS 1.0/1.1 plus the older
+	// RSA/CBC cipher set.
+	LegacyTLS   bool   `json:"legacy_tls"`
+	Description string `json:"description"`
+	CreatedBy   string `json:"created_by"` // readonly
 }
 
 func (i *Input) String() string {
