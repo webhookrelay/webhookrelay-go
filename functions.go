@@ -5,19 +5,73 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 
 	"github.com/pkg/errors"
-
-	reactor_v1 "github.com/webhookrelay/webhookrelay-go/api/reactor/v1"
 )
 
-// Function is an alias to reactor_v1 pkg
-type Function = reactor_v1.Function
+// Function represents a reactor function (transformation) that can be attached
+// to bucket inputs/outputs to modify webhooks in flight.
+type Function struct {
+	ID        string `json:"id"`
+	AccountID string `json:"account_id"`
+	Created   int64  `json:"created"`
+	Updated   int64  `json:"updated"`
+	// Driver specifies which runtime executes the function, e.g. "js" or "lua".
+	Driver string `json:"driver"`
+	// Payload is the function source/executable. When creating or updating a
+	// function via the SDK it is base64 encoded before being sent.
+	Payload     string `json:"payload"`
+	Name        string `json:"name"`
+	PayloadSize int64  `json:"payload_size"`
+	// Compression type (if any) for the payload, for example gzip or zlib.
+	Compression string            `json:"compression"`
+	Metadata    map[string]string `json:"metadata"`
+}
 
-// ExecuteResponse is an alias to reactor v1 pkg
-type ExecuteResponse = reactor_v1.ExecuteResponse
+// ExecuteResponse is returned when a function is invoked. It describes how the
+// function modified the request/response and whether forwarding should stop.
+type ExecuteResponse struct {
+	RequestID        string    `json:"request_id"`
+	RequestModified  bool      `json:"request_modified"`
+	ResponseModified bool      `json:"response_modified"`
+	Request          *Request  `json:"request"`
+	Response         *Response `json:"response"`
+	FunctionID       string    `json:"function_id"`
+	// Error is the driver error (set when the function failed to execute).
+	Error          string `json:"error"`
+	StopForwarding bool   `json:"stop_forwarding"`
+}
+
+// Request is the (possibly modified) HTTP request as seen by a function.
+type Request struct {
+	Body             []byte            `json:"body"`
+	BodyModified     bool              `json:"body_modified"`
+	Header           map[string]Header `json:"header"`
+	HeaderModified   bool              `json:"header_modified"`
+	Path             string            `json:"path"`
+	PathModified     bool              `json:"path_modified"`
+	RawQuery         string            `json:"raw_query"`
+	RawQueryModified bool              `json:"raw_query_modified"`
+	Method           string            `json:"method"`
+	MethodModified   bool              `json:"method_modified"`
+	Metadata         map[string]string `json:"metadata"`
+	BodyPath         string            `json:"body_path"`
+	ModifiedBodyPath string            `json:"modified_body_path"`
+}
+
+// Response is an optional response a function can set to return a dynamic reply.
+type Response struct {
+	Status   int32             `json:"status"`
+	Body     []byte            `json:"body"`
+	Header   map[string]Header `json:"header"`
+	BodyPath string            `json:"body_path"`
+}
+
+// Header holds the values for a single HTTP header key.
+type Header struct {
+	Values []string `json:"values"`
+}
 
 // FunctionRequest used for creating/updating functions
 type FunctionRequest struct {
@@ -67,7 +121,7 @@ func (api *API) ListFunctions(options *FunctionListOptions) ([]*Function, error)
 		return nil, errors.Wrap(err, errMakeRequestError)
 	}
 
-	var functions []*reactor_v1.Function
+	var functions []*Function
 	err = json.Unmarshal(resp, &functions)
 	if err != nil {
 		return nil, errors.Wrap(err, errUnmarshalError)
@@ -114,7 +168,7 @@ func (api *API) GetFunction(ref string) (*Function, error) {
 // CreateFunction - create new function
 func (api *API) CreateFunction(opts *CreateFunctionRequest) (*Function, error) {
 
-	functionBody, err := ioutil.ReadAll(opts.Payload)
+	functionBody, err := io.ReadAll(opts.Payload)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read function body")
 	}
@@ -130,7 +184,7 @@ func (api *API) CreateFunction(opts *CreateFunctionRequest) (*Function, error) {
 		return nil, err
 	}
 
-	var f reactor_v1.Function
+	var f Function
 	if err := json.Unmarshal(resp, &f); err != nil {
 		return nil, err
 	}
@@ -152,7 +206,7 @@ func (api *API) UpdateFunction(options *UpdateFunctionRequest) (*Function, error
 		return nil, fmt.Errorf("either name or ID has to be set")
 	}
 
-	functionBody, err := ioutil.ReadAll(options.Payload)
+	functionBody, err := io.ReadAll(options.Payload)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to read function body")
 	}
@@ -167,7 +221,7 @@ func (api *API) UpdateFunction(options *UpdateFunctionRequest) (*Function, error
 	if err != nil {
 		return nil, err
 	}
-	var function reactor_v1.Function
+	var function Function
 	if err := json.Unmarshal(resp, &function); err != nil {
 		return nil, err
 	}
@@ -217,8 +271,8 @@ func (api *API) functionIDFromRef(ref string) (id string, err error) {
 		return
 	}
 	for _, f := range functions {
-		if f.Id == ref || f.Name == ref {
-			return f.Id, nil
+		if f.ID == ref || f.Name == ref {
+			return f.ID, nil
 		}
 	}
 	return "", fmt.Errorf("no such function '%s'", ref)

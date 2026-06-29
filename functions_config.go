@@ -5,16 +5,26 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/pkg/errors"
-	reactor_v1 "github.com/webhookrelay/webhookrelay-go/api/reactor/v1"
 )
 
-// ListConfigResponse defines function config
-type ListConfigResponse = reactor_v1.ListConfigResponse
+// ListConfigResponse holds the configuration variables for a function.
+type ListConfigResponse struct {
+	Variables []*Variable `json:"variables"`
+}
 
-// Variable is function configuration variable
-type Variable = reactor_v1.Variable
+// Variable is a function configuration variable. Functions can read these
+// during execution to access account/function specific configuration.
+type Variable struct {
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	AccountID  string    `json:"account_id"`
+	FunctionID string    `json:"function_id"`
+	Key        string    `json:"key"`
+	Value      string    `json:"value"`
+}
 
 // SetFunctionConfigRequest sets/updates function configuration
 type SetFunctionConfigRequest struct {
