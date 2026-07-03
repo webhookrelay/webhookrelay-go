@@ -2,6 +2,7 @@ package webhookrelay
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -195,6 +196,49 @@ func TestOutputDurabilityThrottleRulesRoundTrip(t *testing.T) {
 	if out.Rules == nil || out.Rules.Match == nil || out.Rules.Match.Value != "ping" ||
 		out.Rules.Match.Parameter.Name != "X-Event" {
 		t.Fatalf("rules not preserved: %+v", out.Rules)
+	}
+}
+
+func TestFunctionPayloadPlainString(t *testing.T) {
+	// The API serves the function source verbatim as a JSON string: the
+	// backend base64-decodes on write and stores/returns the raw source
+	// (swagger: structs.Function.payload is "string"). The SDK field is a
+	// string, so it must round-trip the source untouched — NOT base64-decode
+	// it the way the old []byte proto type did. Use source that is not valid
+	// base64 so a regression back to []byte would fail to unmarshal.
+	const src = "function main() { return 1; }"
+	resp := `{"id":"fn-1","driver":"js","payload":` + strconv.Quote(src) + `}`
+
+	var f Function
+	if err := json.Unmarshal([]byte(resp), &f); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if f.Payload != src {
+		t.Fatalf("payload not preserved verbatim: got %q want %q", f.Payload, src)
+	}
+}
+
+func TestVariableRFC3339Timestamps(t *testing.T) {
+	// The function config endpoint returns structs.Variable, which has no
+	// custom MarshalJSON, so its time.Time timestamps serialize as RFC3339
+	// strings (swagger: structs.Variable.created_at is "string") — unlike the
+	// integration/bucket endpoints, which emit unix seconds. A plain time.Time
+	// field parses RFC3339 natively.
+	resp := `{"created_at":"2023-11-14T22:13:20Z","updated_at":"2023-11-14T22:13:20Z","key":"TOKEN","value":"abc"}`
+
+	var v Variable
+	if err := json.Unmarshal([]byte(resp), &v); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	want := time.Date(2023, 11, 14, 22, 13, 20, 0, time.UTC)
+	if !v.CreatedAt.Equal(want) {
+		t.Fatalf("created_at not parsed: got %v want %v", v.CreatedAt, want)
+	}
+	if !v.UpdatedAt.Equal(want) {
+		t.Fatalf("updated_at not parsed: got %v want %v", v.UpdatedAt, want)
+	}
+	if v.Key != "TOKEN" || v.Value != "abc" {
+		t.Fatalf("fields not preserved: %+v", v)
 	}
 }
 

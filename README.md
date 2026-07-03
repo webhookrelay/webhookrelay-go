@@ -14,7 +14,19 @@ go get github.com/webhookrelay/webhookrelay-go
 
 ## Authentication
 
-To authenticate, you will need to first get an API token key & secret pair [here](https://my.webhookrelay.com/tokens).
+Generate credentials [here](https://my.webhookrelay.com/tokens). There are two ways to authenticate:
+
+- **API key (recommended)** — a single key (looks like `sk-...`) sent as a Bearer token:
+
+  ```golang
+  api, err := webhookrelay.NewWithAPIKey(os.Getenv("RELAY_API_KEY"))
+  ```
+
+- **Key & secret pair** — sent as HTTP Basic auth:
+
+  ```golang
+  api, err := webhookrelay.New(os.Getenv("RELAY_KEY"), os.Getenv("RELAY_SECRET"))
+  ```
 
 ## Usage
 
@@ -30,8 +42,9 @@ import (
 )
 
 func main() {
-	// Construct a new Webhook Relay API object to perform requests
-	api, err := webhookrelay.New(os.Getenv("RELAY_KEY"), os.Getenv("RELAY_SECRET"))
+	// Construct a new Webhook Relay API object to perform requests. Use an API
+	// key (Bearer token); alternatively use webhookrelay.New(key, secret).
+	api, err := webhookrelay.NewWithAPIKey(os.Getenv("RELAY_API_KEY"))
 	if err != nil {
 		log.Fatal(err)
   }

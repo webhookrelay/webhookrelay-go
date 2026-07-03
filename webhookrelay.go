@@ -24,10 +24,16 @@ const userAgent = "webhookrelay-go/v1"
 
 const (
 	// AuthToken specifies that we should authenticate with an API key & secret
+	// pair, sent as HTTP Basic auth.
 	AuthToken = 1 << iota
+	// AuthAPIKey specifies that we should authenticate with a single API key,
+	// sent as an "Authorization: Bearer <key>" header. API keys look like
+	// "sk-...".
+	AuthAPIKey
 )
 
-// New creates a new Webhook Relay v1 API client.
+// New creates a new Webhook Relay v1 API client authenticated with an API key
+// and secret pair (sent as HTTP Basic auth).
 func New(key, secret string, opts ...Option) (*API, error) {
 	if key == "" || secret == "" {
 		return nil, ErrEmptyCredentials
@@ -44,11 +50,34 @@ func New(key, secret string, opts ...Option) (*API, error) {
 	return api, nil
 }
 
+// NewWithAPIKey creates a new Webhook Relay v1 API client authenticated with a
+// single API key. The key is sent as an "Authorization: Bearer <key>" header.
+// This is the simplest way to authenticate — generate an API key (looks like
+// "sk-...") at https://my.webhookrelay.com/tokens.
+func NewWithAPIKey(apiKey string, opts ...Option) (*API, error) {
+	if apiKey == "" {
+		return nil, ErrEmptyCredentials
+	}
+
+	api, err := newClient(opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	api.APIToken = apiKey
+	api.authType = AuthAPIKey
+
+	return api, nil
+}
+
 // API holds the configuration for the current API client. A client should not
 // be modified concurrently.
 type API struct {
 	APIKey    string
 	APISecret string
+	// APIToken is a single API key used for Bearer authentication (set via
+	// NewWithAPIKey). When non-empty it takes precedence over APIKey/APISecret.
+	APIToken  string
 	BaseURL   string
 	UserAgent string
 
@@ -264,7 +293,11 @@ func (api *API) request(ctx context.Context, method, uri string, reqBody io.Read
 	copyHeader(combinedHeaders, headers)
 	req.Header = combinedHeaders
 
-	req.SetBasicAuth(api.APIKey, api.APISecret)
+	if authType == AuthAPIKey && api.APIToken != "" {
+		req.Header.Set("Authorization", "Bearer "+api.APIToken)
+	} else {
+		req.SetBasicAuth(api.APIKey, api.APISecret)
+	}
 
 	if api.UserAgent != "" {
 		req.Header.Set("User-Agent", api.UserAgent)

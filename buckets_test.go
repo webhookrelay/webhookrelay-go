@@ -14,11 +14,17 @@ import (
 
 func getIntegrationTestClient() (*API, error) {
 
+	// Prefer a single API key (sent as a Bearer token) when provided — this is
+	// the simplest way to authenticate.
+	if apiKey := os.Getenv("RELAY_API_KEY"); apiKey != "" {
+		return NewWithAPIKey(apiKey)
+	}
+
 	key := os.Getenv("RELAY_KEY")
 	secret := os.Getenv("RELAY_SECRET")
 
 	if key == "" {
-		return nil, errors.New("RELAY_KEY must be set")
+		return nil, errors.New("RELAY_API_KEY or RELAY_KEY must be set")
 	}
 	if secret == "" {
 		return nil, errors.New("RELAY_SECRET must be set")
@@ -28,10 +34,7 @@ func getIntegrationTestClient() (*API, error) {
 }
 
 func TestListBuckets(t *testing.T) {
-	client, err := getIntegrationTestClient()
-	if err != nil {
-		t.Fatalf("failed to get API client: %s", err)
-	}
+	client := integrationClient(t)
 
 	buckets, err := client.ListBuckets(&BucketListOptions{})
 	assert.Nil(t, err)

@@ -7,10 +7,7 @@ import (
 )
 
 func TestListAccessTokens(t *testing.T) {
-	client, err := getIntegrationTestClient()
-	if err != nil {
-		t.Fatalf("failed to get API client: %s", err)
-	}
+	client := integrationClient(t)
 
 	tokens, err := client.ListAccessTokens(&AccessTokenListOptions{})
 	assert.Nil(t, err)
