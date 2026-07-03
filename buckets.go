@@ -225,7 +225,15 @@ func (api *API) DeleteBucket(options *BucketDeleteOptions) error {
 		return err
 	}
 
-	_, err = api.makeRequest("DELETE", "/buckets/"+bucketID, nil)
+	// The API refuses to delete a bucket that still has inputs or outputs
+	// (returning 412) unless "force" is supplied as a query parameter. Every
+	// bucket has at least a default input, so callers must set Force to delete.
+	path := "/buckets/" + bucketID
+	if options.Force {
+		path += "?force=true"
+	}
+
+	_, err = api.makeRequest("DELETE", path, nil)
 	if err != nil {
 		return err
 	}

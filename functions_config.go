@@ -45,13 +45,13 @@ func (api *API) ListFunctionConfigurationVariables(options *FunctionConfiguratio
 		return nil, errors.Wrap(err, errMakeRequestError)
 	}
 
-	var result *ListConfigResponse
-	err = json.Unmarshal(resp, &result)
-	if err != nil {
+	// The API returns a bare JSON array of variables, not a wrapper object.
+	var variables []*Variable
+	if err := json.Unmarshal(resp, &variables); err != nil {
 		return nil, errors.Wrap(err, errUnmarshalError)
 	}
 
-	return result.Variables, nil
+	return variables, nil
 }
 
 // SetFunctionConfigurationVariable allows users to set config variables for a function. Function can then use special methods
