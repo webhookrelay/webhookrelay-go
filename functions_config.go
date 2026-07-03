@@ -26,6 +26,30 @@ type Variable struct {
 	Value      string    `json:"value"`
 }
 
+// UnmarshalJSON accepts either unix seconds or RFC3339 strings for the time
+// fields so responses decode regardless of the format the API uses.
+func (v *Variable) UnmarshalJSON(data []byte) error {
+	type Alias Variable
+	aux := &struct {
+		CreatedAt json.RawMessage `json:"created_at"`
+		UpdatedAt json.RawMessage `json:"updated_at"`
+		*Alias
+	}{
+		Alias: (*Alias)(v),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	var err error
+	if v.CreatedAt, err = parseTime(aux.CreatedAt); err != nil {
+		return err
+	}
+	if v.UpdatedAt, err = parseTime(aux.UpdatedAt); err != nil {
+		return err
+	}
+	return nil
+}
+
 // SetFunctionConfigRequest sets/updates function configuration
 type SetFunctionConfigRequest struct {
 	ID    string `json:"-"` // function ID

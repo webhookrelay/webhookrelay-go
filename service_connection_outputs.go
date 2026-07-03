@@ -64,6 +64,30 @@ type ServiceConnectionOutput struct {
 	SlackOutput     *SlackOutput     `json:"slack_output,omitempty"`
 }
 
+// UnmarshalJSON accepts either unix seconds or RFC3339 strings for the time
+// fields so responses decode regardless of the format the API uses.
+func (o *ServiceConnectionOutput) UnmarshalJSON(data []byte) error {
+	type Alias ServiceConnectionOutput
+	aux := &struct {
+		CreatedAt json.RawMessage `json:"created_at"`
+		UpdatedAt json.RawMessage `json:"updated_at"`
+		*Alias
+	}{
+		Alias: (*Alias)(o),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	var err error
+	if o.CreatedAt, err = parseTime(aux.CreatedAt); err != nil {
+		return err
+	}
+	if o.UpdatedAt, err = parseTime(aux.UpdatedAt); err != nil {
+		return err
+	}
+	return nil
+}
+
 // GCPPubSubOutput configures a Google Cloud Pub/Sub topic destination.
 type GCPPubSubOutput struct {
 	TopicName string `json:"topic_name"`

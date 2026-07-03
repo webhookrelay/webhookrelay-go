@@ -56,6 +56,34 @@ type ServiceConnection struct {
 	AzureServiceConnection AzureServiceConnection `json:"azure_service_connection"`
 }
 
+// UnmarshalJSON accepts either unix seconds or RFC3339 strings for the time
+// fields so responses decode regardless of the format the API uses.
+func (s *ServiceConnection) UnmarshalJSON(data []byte) error {
+	type Alias ServiceConnection
+	aux := &struct {
+		CreatedAt   json.RawMessage `json:"created_at"`
+		UpdatedAt   json.RawMessage `json:"updated_at"`
+		LastChecked json.RawMessage `json:"last_checked"`
+		*Alias
+	}{
+		Alias: (*Alias)(s),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	var err error
+	if s.CreatedAt, err = parseTime(aux.CreatedAt); err != nil {
+		return err
+	}
+	if s.UpdatedAt, err = parseTime(aux.UpdatedAt); err != nil {
+		return err
+	}
+	if s.LastChecked, err = parseTime(aux.LastChecked); err != nil {
+		return err
+	}
+	return nil
+}
+
 // GCPServiceConnection holds Google Cloud credentials.
 type GCPServiceConnection struct {
 	ProjectID           string `json:"project_id"`

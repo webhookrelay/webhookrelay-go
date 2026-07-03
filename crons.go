@@ -60,6 +60,68 @@ type Cron struct {
 	NextRun time.Time `json:"next_run"`
 }
 
+// MarshalJSON emits only client-settable fields. Read-only fields (bucket,
+// next_run, created_at, updated_at) are omitted, and zero StartsAt/EndsAt are
+// omitted rather than serialized as year-1 timestamps — the API treats an
+// absent bound as "no bound".
+func (c *Cron) MarshalJSON() ([]byte, error) {
+	type Alias Cron
+	aux := &struct {
+		Bucket    *Bucket    `json:"bucket,omitempty"`
+		NextRun   *time.Time `json:"next_run,omitempty"`
+		CreatedAt *time.Time `json:"created_at,omitempty"`
+		UpdatedAt *time.Time `json:"updated_at,omitempty"`
+		StartsAt  *time.Time `json:"starts_at,omitempty"`
+		EndsAt    *time.Time `json:"ends_at,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+	if !c.StartsAt.IsZero() {
+		aux.StartsAt = &c.StartsAt
+	}
+	if !c.EndsAt.IsZero() {
+		aux.EndsAt = &c.EndsAt
+	}
+	return json.Marshal(aux)
+}
+
+// UnmarshalJSON accepts either unix seconds or RFC3339 strings for every time
+// field, so responses decode regardless of the format the API uses.
+func (c *Cron) UnmarshalJSON(data []byte) error {
+	type Alias Cron
+	aux := &struct {
+		CreatedAt json.RawMessage `json:"created_at"`
+		UpdatedAt json.RawMessage `json:"updated_at"`
+		StartsAt  json.RawMessage `json:"starts_at"`
+		EndsAt    json.RawMessage `json:"ends_at"`
+		NextRun   json.RawMessage `json:"next_run"`
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	var err error
+	if c.CreatedAt, err = parseTime(aux.CreatedAt); err != nil {
+		return err
+	}
+	if c.UpdatedAt, err = parseTime(aux.UpdatedAt); err != nil {
+		return err
+	}
+	if c.StartsAt, err = parseTime(aux.StartsAt); err != nil {
+		return err
+	}
+	if c.EndsAt, err = parseTime(aux.EndsAt); err != nil {
+		return err
+	}
+	if c.NextRun, err = parseTime(aux.NextRun); err != nil {
+		return err
+	}
+	return nil
+}
+
 // CronListOptions is used to list crons.
 type CronListOptions struct{}
 

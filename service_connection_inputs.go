@@ -71,6 +71,30 @@ type ServiceConnectionInput struct {
 	EmailAddress string `json:"email_address,omitempty"`
 }
 
+// UnmarshalJSON accepts either unix seconds or RFC3339 strings for the time
+// fields so responses decode regardless of the format the API uses.
+func (i *ServiceConnectionInput) UnmarshalJSON(data []byte) error {
+	type Alias ServiceConnectionInput
+	aux := &struct {
+		CreatedAt json.RawMessage `json:"created_at"`
+		UpdatedAt json.RawMessage `json:"updated_at"`
+		*Alias
+	}{
+		Alias: (*Alias)(i),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	var err error
+	if i.CreatedAt, err = parseTime(aux.CreatedAt); err != nil {
+		return err
+	}
+	if i.UpdatedAt, err = parseTime(aux.UpdatedAt); err != nil {
+		return err
+	}
+	return nil
+}
+
 // GCPPubSubInput configures a Google Cloud Pub/Sub subscription source.
 type GCPPubSubInput struct {
 	SubscriptionName string `json:"subscription_name"`

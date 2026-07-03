@@ -255,6 +255,65 @@ func TestIntegrationBucketLifecycle(t *testing.T) {
 	})
 }
 
+// TestIntegrationCronLifecycle exercises cron CRUD against a live API. It
+// verifies the Cron marshaler produces a payload the server accepts (no empty
+// bucket object, no year-1 time bounds) and that responses decode.
+func TestIntegrationCronLifecycle(t *testing.T) {
+	client := integrationClient(t)
+
+	cronName := uniqueName("cron")
+	cron, err := client.CreateCron(&Cron{
+		Name:        cronName,
+		Schedule:    "0 0 * * *",
+		Timezone:    "UTC",
+		Method:      "POST",
+		Destination: "https://example.com/hook",
+		Payload:     `{"ping":true}`,
+		// Leave disabled so it never actually fires during the test run.
+		Enabled: false,
+	})
+	if err != nil {
+		if isFeatureUnavailable(err) {
+			t.Skipf("crons not enabled for this account: %v", err)
+		}
+		t.Fatalf("CreateCron: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := client.DeleteCron(cron.ID); err != nil {
+			t.Errorf("cleanup DeleteCron(%s): %v", cron.ID, err)
+		}
+		// A cron provisions a bucket named after itself; remove it in case the
+		// cron delete did not cascade (ignore "not found").
+		_ = client.DeleteBucket(&BucketDeleteOptions{Ref: cronName, Force: true})
+	})
+
+	if cron.ID == "" || cron.Name != cronName {
+		t.Fatalf("unexpected cron: %+v", cron)
+	}
+
+	got, err := client.GetCron(cron.ID)
+	if err != nil {
+		t.Fatalf("GetCron: %v", err)
+	}
+	if got.ID != cron.ID || got.Schedule != "0 0 * * *" || got.Destination != "https://example.com/hook" {
+		t.Errorf("GetCron mismatch: %+v", got)
+	}
+
+	crons, err := client.ListCrons(&CronListOptions{})
+	if err != nil {
+		t.Fatalf("ListCrons: %v", err)
+	}
+	found := false
+	for _, c := range crons {
+		if c.ID == cron.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("created cron %s not found in list", cron.ID)
+	}
+}
+
 func containsInput(inputs []*Input, id string) bool {
 	for _, in := range inputs {
 		if in.ID == id {
