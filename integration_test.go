@@ -19,10 +19,16 @@ func integrationClient(t *testing.T) *API {
 	return client
 }
 
-// uniqueName builds a collision-resistant resource name for a test run so
-// parallel/re-run invocations do not clash on the live API.
-func uniqueName(prefix string) string {
-	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+// testNamePrefix is prepended to every top-level resource (buckets, functions)
+// created by these live tests so they are easy to spot and never mix with
+// resources created by the JavaScript SDK's tests.
+const testNamePrefix = "test-sdk-go-"
+
+// uniqueName builds a collision-resistant, prefixed resource name for a test run
+// so parallel/re-run invocations do not clash on the live API and the resources
+// are clearly identifiable as this SDK's.
+func uniqueName(kind string) string {
+	return fmt.Sprintf("%s%s-%d", testNamePrefix, kind, time.Now().UnixNano())
 }
 
 // TestIntegrationBucketLifecycle exercises the full resource pipeline against a
@@ -34,7 +40,7 @@ func TestIntegrationBucketLifecycle(t *testing.T) {
 	client := integrationClient(t)
 
 	// --- Bucket ---
-	bucketName := uniqueName("sdk-it-bucket")
+	bucketName := uniqueName("bucket")
 	bucket, err := client.CreateBucket(&BucketCreateOptions{
 		Name:        bucketName,
 		Description: "SDK integration test bucket",
@@ -139,7 +145,7 @@ func TestIntegrationBucketLifecycle(t *testing.T) {
 	t.Run("function_config", func(t *testing.T) {
 		const src = "function transform(r) { return r; }"
 		fn, err := client.CreateFunction(&CreateFunctionRequest{
-			Name:    uniqueName("sdk-it-fn"),
+			Name:    uniqueName("fn"),
 			Driver:  "js",
 			Payload: strings.NewReader(src),
 		})
