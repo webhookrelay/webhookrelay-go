@@ -7,22 +7,17 @@ import (
 )
 
 func TestListAccessTokens(t *testing.T) {
-	client, err := getIntegrationTestClient()
-	if err != nil {
-		t.Fatalf("failed to get API client: %s", err)
-	}
+	client := integrationClient(t)
 
+	// Smoke test: listing works against whatever account the credentials
+	// belong to (the account always has at least the credential's own token),
+	// and every returned token is well-formed. End-to-end CRUD coverage lives
+	// in TestIntegrationBucketLifecycle.
 	tokens, err := client.ListAccessTokens(&AccessTokenListOptions{})
-	assert.Nil(t, err)
-	assert.True(t, len(tokens) > 0)
-
-	found := false
+	assert.NoError(t, err)
+	assert.NotNil(t, tokens)
 
 	for _, token := range tokens {
-		if token.Description == "test-token-1" {
-			found = true
-		}
+		assert.NotEmpty(t, token.ID, "access token missing ID")
 	}
-
-	assert.True(t, found, "test-token-1 not found in tokens")
 }

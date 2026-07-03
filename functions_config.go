@@ -5,16 +5,50 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/pkg/errors"
-	reactor_v1 "github.com/webhookrelay/webhookrelay-go/api/reactor/v1"
 )
 
-// ListConfigResponse defines function config
-type ListConfigResponse = reactor_v1.ListConfigResponse
+// ListConfigResponse holds the configuration variables for a function.
+type ListConfigResponse struct {
+	Variables []*Variable `json:"variables"`
+}
 
-// Variable is function configuration variable
-type Variable = reactor_v1.Variable
+// Variable is a function configuration variable. Functions can read these
+// during execution to access account/function specific configuration.
+type Variable struct {
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	AccountID  string    `json:"account_id"`
+	FunctionID string    `json:"function_id"`
+	Key        string    `json:"key"`
+	Value      string    `json:"value"`
+}
+
+// UnmarshalJSON accepts either unix seconds or RFC3339 strings for the time
+// fields so responses decode regardless of the format the API uses.
+func (v *Variable) UnmarshalJSON(data []byte) error {
+	type Alias Variable
+	aux := &struct {
+		CreatedAt json.RawMessage `json:"created_at"`
+		UpdatedAt json.RawMessage `json:"updated_at"`
+		*Alias
+	}{
+		Alias: (*Alias)(v),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	var err error
+	if v.CreatedAt, err = parseTime(aux.CreatedAt); err != nil {
+		return err
+	}
+	if v.UpdatedAt, err = parseTime(aux.UpdatedAt); err != nil {
+		return err
+	}
+	return nil
+}
 
 // SetFunctionConfigRequest sets/updates function configuration
 type SetFunctionConfigRequest struct {
@@ -35,13 +69,13 @@ func (api *API) ListFunctionConfigurationVariables(options *FunctionConfiguratio
 		return nil, errors.Wrap(err, errMakeRequestError)
 	}
 
-	var result *ListConfigResponse
-	err = json.Unmarshal(resp, &result)
-	if err != nil {
+	// The API returns a bare JSON array of variables, not a wrapper object.
+	var variables []*Variable
+	if err := json.Unmarshal(resp, &variables); err != nil {
 		return nil, errors.Wrap(err, errUnmarshalError)
 	}
 
-	return result.Variables, nil
+	return variables, nil
 }
 
 // SetFunctionConfigurationVariable allows users to set config variables for a function. Function can then use special methods

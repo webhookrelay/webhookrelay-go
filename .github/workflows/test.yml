@@ -20,6 +20,9 @@ jobs:
     
     - name: Run tests
       env:
+        # RELAY_API_KEY (a single API key, sent as a Bearer token) is preferred
+        # by the test client; RELAY_KEY + RELAY_SECRET remain as a fallback.
+        RELAY_API_KEY: ${{ secrets.RELAY_API_KEY }}
         RELAY_KEY: ${{ secrets.RELAY_KEY }}
         RELAY_SECRET: ${{ secrets.RELAY_SECRET }}
       run: go test -v -failfast ./...

@@ -23,10 +23,22 @@ type Bucket struct {
 	Suspended   bool      `json:"suspended"`
 	// LargeWebhooks - if set, we allow larger than 3MB webhooks
 	// to be sent to the bucket. This is useful for large file uploads
-	LargeWebhooks bool       `json:"large_webhooks"`
-	Auth          BucketAuth `json:"auth"`
-	Inputs        []*Input   `json:"inputs"`  // readonly
-	Outputs       []*Output  `json:"outputs"` // readonly
+	LargeWebhooks bool `json:"large_webhooks"`
+	// StaticIP routes the bucket through the forwarding proxy with a static egress IP.
+	StaticIP bool `json:"static_ip"`
+	// AccountID is the owning account ID.
+	AccountID string `json:"account_id"` // readonly
+	// CronID is set when the bucket is managed by a cron trigger.
+	CronID  *string    `json:"cron_id"` // readonly
+	Auth    BucketAuth `json:"auth"`
+	Inputs  []*Input   `json:"inputs"`  // readonly
+	Outputs []*Output  `json:"outputs"` // readonly
+	// ServiceConnectionInputs are external event sources feeding into the bucket.
+	ServiceConnectionInputs []*ServiceConnectionInput `json:"service_connection_inputs"` // readonly
+	// ServiceConnectionOutputs are external destinations the bucket pushes to.
+	ServiceConnectionOutputs []*ServiceConnectionOutput `json:"service_connection_outputs"` // readonly
+	// IntegrationConfigurations are notification integrations linked to the bucket.
+	IntegrationConfigurations []*IntegrationConfiguration `json:"integration_configurations"` // readonly
 }
 
 // MarshalJSON helper to marshal unix time
@@ -71,10 +83,53 @@ func (b *Bucket) UnmarshalJSON(data []byte) error {
 
 // BucketAuth specifies authentication method for incoming requests to the bucket's inputs
 type BucketAuth struct {
-	Type     AuthType `json:"type"`
-	Username string   `json:"username,omitempty"`
-	Password string   `json:"password,omitempty"`
-	Token    string   `json:"token,omitempty"`
+	ID        string    `json:"id"`         // readonly
+	CreatedAt time.Time `json:"created_at"` // readonly
+	UpdatedAt time.Time `json:"updated_at"` // readonly
+	Type      AuthType  `json:"type"`
+	Username  string    `json:"username,omitempty"`
+	Password  string    `json:"password,omitempty"`
+	Token     string    `json:"token,omitempty"`
+}
+
+// MarshalJSON helper to marshal unix time
+func (b *BucketAuth) MarshalJSON() ([]byte, error) {
+	type Alias BucketAuth
+	return json.Marshal(&struct {
+		CreatedAt int64 `json:"created_at"`
+		UpdatedAt int64 `json:"updated_at"`
+		*Alias
+	}{
+		CreatedAt: b.CreatedAt.Unix(),
+		UpdatedAt: b.UpdatedAt.Unix(),
+		Alias:     (*Alias)(b),
+	})
+}
+
+// UnmarshalJSON helper to unmarshal unix time or RFC3339 string
+func (b *BucketAuth) UnmarshalJSON(data []byte) error {
+	type Alias BucketAuth
+	aux := &struct {
+		CreatedAt json.RawMessage `json:"created_at"`
+		UpdatedAt json.RawMessage `json:"updated_at"`
+		*Alias
+	}{
+		Alias: (*Alias)(b),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	var err error
+	b.CreatedAt, err = parseTime(aux.CreatedAt)
+	if err != nil {
+		return err
+	}
+	b.UpdatedAt, err = parseTime(aux.UpdatedAt)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // BucketCreateOptions create opts
@@ -170,7 +225,15 @@ func (api *API) DeleteBucket(options *BucketDeleteOptions) error {
 		return err
 	}
 
-	_, err = api.makeRequest("DELETE", "/buckets/"+bucketID, nil)
+	// The API refuses to delete a bucket that still has inputs or outputs
+	// (returning 412) unless "force" is supplied as a query parameter. Every
+	// bucket has at least a default input, so callers must set Force to delete.
+	path := "/buckets/" + bucketID
+	if options.Force {
+		path += "?force=true"
+	}
+
+	_, err = api.makeRequest("DELETE", path, nil)
 	if err != nil {
 		return err
 	}
