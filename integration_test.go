@@ -229,6 +229,23 @@ func TestIntegrationBucketLifecycle(t *testing.T) {
 		if !found {
 			t.Errorf("created email input %s not found in list", emailInput.ID)
 		}
+
+		// GetBucket must still decode once the bucket carries nested
+		// service-connection resources (these use RFC3339 timestamps, while the
+		// bucket's own timestamps are unix seconds — both must parse).
+		withNested, err := client.GetBucket(bucket.ID)
+		if err != nil {
+			t.Fatalf("GetBucket with nested service-connection inputs: %v", err)
+		}
+		nestedFound := false
+		for _, in := range withNested.ServiceConnectionInputs {
+			if in.ID == emailInput.ID {
+				nestedFound = true
+			}
+		}
+		if !nestedFound {
+			t.Errorf("email input %s not present in bucket.ServiceConnectionInputs", emailInput.ID)
+		}
 	})
 }
 
