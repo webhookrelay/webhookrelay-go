@@ -116,10 +116,24 @@ type WebhookLogsResponse struct {
 	Offset int    `json:"offset"`
 }
 
-// ListWebhookLogs lists webhook logs for an account
+// ListWebhookLogs lists webhook logs for a bucket. BucketID is required; the
+// remaining WebhookLogsListOptions fields (Status, From, To, Limit, Offset)
+// filter and paginate the results. Poll this endpoint to consume received
+// webhooks without forwarding them.
 func (api *API) ListWebhookLogs(options *WebhookLogsListOptions) (*WebhookLogsResponse, error) {
+	if options == nil {
+		options = &WebhookLogsListOptions{}
+	}
+	if options.BucketID == "" {
+		return nil, errors.New("BucketID is required to list webhook logs")
+	}
 
-	resp, err := api.makeRequest(http.MethodGet, "/logs", nil)
+	path := "/logs"
+	if q := getQuery(options); q != "" {
+		path += "?" + q
+	}
+
+	resp, err := api.makeRequest(http.MethodGet, path, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, errMakeRequestError)
 	}

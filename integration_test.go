@@ -66,6 +66,16 @@ func TestIntegrationBucketLifecycle(t *testing.T) {
 		t.Fatalf("GetBucket returned %q, want %q", got.ID, bucket.ID)
 	}
 
+	// Polling: listing logs for the bucket must succeed (empty for a fresh
+	// bucket). Exercises the required bucket query parameter.
+	logs, err := client.ListWebhookLogs(&WebhookLogsListOptions{BucketID: bucket.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("ListWebhookLogs: %v", err)
+	}
+	if logs == nil {
+		t.Fatalf("ListWebhookLogs returned nil response")
+	}
+
 	// --- Input ---
 	t.Run("input", func(t *testing.T) {
 		input, err := client.CreateInput(&Input{
