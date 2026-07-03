@@ -36,21 +36,16 @@ func getIntegrationTestClient() (*API, error) {
 func TestListBuckets(t *testing.T) {
 	client := integrationClient(t)
 
+	// Smoke test: listing works against whatever account the credentials
+	// belong to, and every returned bucket is well-formed. End-to-end CRUD
+	// coverage (create/get/update/delete) lives in TestIntegrationBucketLifecycle.
 	buckets, err := client.ListBuckets(&BucketListOptions{})
-	assert.Nil(t, err)
-	assert.True(t, len(buckets) > 0)
+	assert.NoError(t, err)
+	assert.NotNil(t, buckets)
 
-	found := false
-
-	// Look for "test-bucket" in the buckets
 	for _, bucket := range buckets {
-		if bucket.Name == "test-bucket-1" {
-			found = true
-		}
+		assert.NotEmpty(t, bucket.ID, "bucket missing ID")
 	}
-
-	assert.True(t, found, "test-bucket-1 not found in buckets")
-
 }
 
 func TestListBuckets_TimeFormats(t *testing.T) {
