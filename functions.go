@@ -133,7 +133,14 @@ func (api *API) ListFunctions(options *FunctionListOptions) ([]*Function, error)
 // InvokeFunction invokes function and gets a response
 func (api *API) InvokeFunction(options *InvokeOpts) (*ExecuteResponse, error) {
 
-	resp, err := api.makeRequest("POST", "/functions/"+options.ID+"/invoke", options.InvokeFunctionRequest)
+	// Resolve a name to an ID like GetFunction/UpdateFunction/DeleteFunction
+	// do; before this, invoking by name 404ed while every sibling accepted it.
+	id, err := api.ensureFunctionID(options.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := api.makeRequest("POST", "/functions/"+id+"/invoke", options.InvokeFunctionRequest)
 	if err != nil {
 		return nil, err
 	}

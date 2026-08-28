@@ -1,8 +1,11 @@
 package webhookrelay
 
 import (
+	"fmt"
 	"net/http"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // Option is a functional option for configuring the API client.
@@ -44,6 +47,21 @@ func WithRetryPolicy(maxRetries int, minRetryDelaySecs int, maxRetryDelaySecs in
 			MinRetryDelay: time.Duration(minRetryDelaySecs) * time.Second,
 			MaxRetryDelay: time.Duration(maxRetryDelaySecs) * time.Second,
 		}
+		return nil
+	}
+}
+
+// WithRateLimit overrides the client-side rate limit. The default is 4
+// requests per second with a burst of 1, matching the API's default tier
+// (1200 requests per 5 minutes); accounts on higher tiers, or hosts running
+// several concurrent consumers of one client, can raise it. Requests beyond
+// the limit wait rather than fail.
+func WithRateLimit(requestsPerSecond float64, burst int) Option {
+	return func(api *API) error {
+		if requestsPerSecond <= 0 || burst < 1 {
+			return fmt.Errorf("rate limit needs a positive requests-per-second and a burst of at least 1")
+		}
+		api.rateLimiter = rate.NewLimiter(rate.Limit(requestsPerSecond), burst)
 		return nil
 	}
 }

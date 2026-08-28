@@ -87,6 +87,30 @@ type API struct {
 	retryPolicy RetryPolicy
 	rateLimiter *rate.Limiter
 	logger      Logger
+	// reqCtx is the per-call context set via WithContext; nil means
+	// context.Background(). It bounds rate-limiter waits, retry backoff and
+	// the HTTP requests themselves.
+	reqCtx context.Context
+}
+
+// WithContext returns a shallow copy of the client whose requests are bound
+// to ctx: cancelling it aborts rate-limiter waits, retry backoff sleeps and
+// in-flight HTTP requests. The copy shares the underlying HTTP client, rate
+// limiter and configuration, so it is cheap to create per call:
+//
+//	buckets, err := api.WithContext(ctx).ListBuckets(&BucketListOptions{})
+func (api *API) WithContext(ctx context.Context) *API {
+	clone := *api
+	clone.reqCtx = ctx
+	return &clone
+}
+
+// requestContext resolves the context requests run under.
+func (api *API) requestContext() context.Context {
+	if api.reqCtx != nil {
+		return api.reqCtx
+	}
+	return context.Background()
 }
 
 // newClient provides shared logic
@@ -161,7 +185,7 @@ type Logger interface {
 // makeRequest makes a HTTP request and returns the body as a byte slice,
 // closing it before returning. params will be serialized to JSON.
 func (api *API) makeRequest(method, uri string, params interface{}) ([]byte, error) {
-	return api.makeRequestWithAuthType(context.TODO(), method, uri, params, api.authType)
+	return api.makeRequestWithAuthType(api.requestContext(), method, uri, params, api.authType)
 }
 
 func (api *API) makeRequestContext(ctx context.Context, method, uri string, params interface{}) ([]byte, error) {
@@ -209,10 +233,17 @@ func (api *API) makeRequestWithAuthTypeAndHeaders(ctx context.Context, method, u
 			}
 			// useful to do some simple logging here, maybe introduce levels later
 			api.logger.Printf("Sleeping %s before retry attempt number %d for request %s %s", sleepDuration.String(), i, method, uri)
-			time.Sleep(sleepDuration)
+			// A cancelled caller should not sit out the backoff.
+			select {
+			case <-time.After(sleepDuration):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 
 		}
-		err = api.rateLimiter.Wait(context.TODO())
+		// Waiting on the caller's context, not a background one: without this
+		// a cancelled request would still queue behind the rate limiter.
+		err = api.rateLimiter.Wait(ctx)
 		if err != nil {
 			return nil, errors.Wrap(err, "Error caused by request rate limiting")
 		}
