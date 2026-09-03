@@ -25,10 +25,10 @@ type Output struct {
 	FunctionID string `json:"function_id"`
 	// ResponseFunctionID names a function that runs AFTER delivery, once the
 	// destination's response (or the final delivery error) is known.
-	ResponseFunctionID string              `json:"response_function_id"`
-	Headers            map[string][]string `json:"headers"`
-	Destination        string              `json:"destination"`
-	Disabled           bool                `json:"disabled"` // Allows disabling forwarding to specific output
+	ResponseFunctionID string       `json:"response_function_id"`
+	Headers            HeaderValues `json:"headers"`
+	Destination        string       `json:"destination"`
+	Disabled           bool         `json:"disabled"` // Allows disabling forwarding to specific output
 	// LockPath ensures that the request path cannot be changed from what is
 	// specified in the destination. For example if request is coming to /v1/webhooks/xxx/github-jenkins,
 	// with lock path 'false' and destination 'http://localhost:8080' it would go to http://localhost:8080/github-jenkins.

@@ -20,15 +20,15 @@ const AnyResponseFromOutput = "anyOutput"
 // Input - webhook inputs are used to create endpoints which are then used
 // by remote systems
 type Input struct {
-	ID         string              `json:"id"`
-	CreatedAt  time.Time           `json:"created_at"`
-	UpdatedAt  time.Time           `json:"updated_at"`
-	Name       string              `json:"name"`
-	FunctionID string              `json:"function_id"`
-	BucketID   string              `json:"bucket_id"`
-	Headers    map[string][]string `json:"headers"`
-	StatusCode int                 `json:"status_code"`
-	Body       string              `json:"body"`
+	ID         string       `json:"id"`
+	CreatedAt  time.Time    `json:"created_at"`
+	UpdatedAt  time.Time    `json:"updated_at"`
+	Name       string       `json:"name"`
+	FunctionID string       `json:"function_id"`
+	BucketID   string       `json:"bucket_id"`
+	Headers    HeaderValues `json:"headers"`
+	StatusCode int          `json:"status_code"`
+	Body       string       `json:"body"`
 	// either output ID or "anyOutput" to indicate that the first response
 	// from any output is good enough. Empty string
 	ResponseFromOutput string `json:"response_from_output"`

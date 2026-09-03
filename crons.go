@@ -44,7 +44,7 @@ type Cron struct {
 	// Payload is the request body sent when the cron fires.
 	Payload string `json:"payload"`
 	// Headers are injected into the fired request.
-	Headers map[string][]string `json:"headers"`
+	Headers HeaderValues `json:"headers"`
 	// Destination is the target URL the webhook is delivered to.
 	Destination string `json:"destination"`
 	// FunctionID optionally attaches a transformation function to the output.
