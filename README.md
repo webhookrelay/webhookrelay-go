@@ -205,6 +205,25 @@ throttle := &webhookrelay.ThrottleConfig{
 _ = throttle
 ```
 
+### Replay missing internal deliveries when an agent reconnects
+
+Recover never-attempted deliveries that arrived while an internal agent was
+disconnected. The server scans at most `Limit` recent rows inside `Lookback`.
+
+```go
+_, err = api.CreateOutput(&webhookrelay.Output{
+	BucketID:    bucket.ID,
+	Name:        "cluster-agent",
+	Destination: "http://webhook-handler.default.svc:8080/webhooks",
+	Internal:    true,
+	ReplayMissing: &webhookrelay.ReplayMissingConfig{
+		Enabled:  true,
+		Lookback: 30 * time.Minute,
+		Limit:    250,
+	},
+})
+```
+
 ## More capabilities
 
 The client covers the rest of the Webhook Relay API too:

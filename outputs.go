@@ -49,6 +49,9 @@ type Output struct {
 	Durability *DurabilityConfig `json:"durability,omitempty"`
 	// Throttle configures per-output throughput throttling.
 	Throttle *ThrottleConfig `json:"throttle,omitempty"`
+	// ReplayMissing configures recovery of internal deliveries that were
+	// persisted but never reached an agent.
+	ReplayMissing *ReplayMissingConfig `json:"replay_missing,omitempty"`
 }
 
 // DurabilityConfig configures durable long-period retries for an output. When
@@ -104,6 +107,18 @@ type ThrottleConfig struct {
 	// Deadline caps how long a queued webhook may wait before being dropped.
 	// Zero falls through to the server default (24h).
 	Deadline time.Duration `json:"deadline,omitempty"`
+}
+
+// ReplayMissingConfig configures replay-on-connect for an internal output.
+// When enabled, an agent connection replays eligible, never-attempted
+// deliveries from the configured lookback window.
+type ReplayMissingConfig struct {
+	// Enabled toggles replay-on-connect for this output.
+	Enabled bool `json:"enabled"`
+	// Lookback selects received deliveries newer than now minus this duration.
+	Lookback time.Duration `json:"lookback,omitempty"`
+	// Limit bounds the number of recent rows scanned for eligible deliveries.
+	Limit int `json:"limit,omitempty"`
 }
 
 // Rules describes a forwarding rule tree attached to an output. Exactly one of
