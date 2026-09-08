@@ -167,6 +167,11 @@ func TestOutputDurabilityThrottleRulesRoundTrip(t *testing.T) {
 			Rate:     10,
 			Interval: ThrottleIntervalMinute,
 		},
+		ReplayMissing: &ReplayMissingConfig{
+			Enabled:  true,
+			Lookback: 30 * time.Minute,
+			Limit:    250,
+		},
 		Rules: &Rules{
 			Match: &MatchRule{Type: "value", Value: "ping", Parameter: Argument{Source: "header", Name: "X-Event"}},
 		},
@@ -192,6 +197,10 @@ func TestOutputDurabilityThrottleRulesRoundTrip(t *testing.T) {
 	if out.Throttle == nil || out.Throttle.Mode != ThrottleModeRate || out.Throttle.Rate != 10 ||
 		out.Throttle.Interval != ThrottleIntervalMinute {
 		t.Fatalf("throttle not preserved: %+v", out.Throttle)
+	}
+	if out.ReplayMissing == nil || !out.ReplayMissing.Enabled ||
+		out.ReplayMissing.Lookback != 30*time.Minute || out.ReplayMissing.Limit != 250 {
+		t.Fatalf("replay-missing config not preserved: %+v", out.ReplayMissing)
 	}
 	if out.Rules == nil || out.Rules.Match == nil || out.Rules.Match.Value != "ping" ||
 		out.Rules.Match.Parameter.Name != "X-Event" {
