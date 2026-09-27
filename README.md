@@ -224,6 +224,42 @@ _, err = api.CreateOutput(&webhookrelay.Output{
 })
 ```
 
+### Outbound webhooks — send webhooks to your customers
+
+Register each customer as a consumer with the HTTPS endpoint they give you, then
+publish events. Webhook Relay signs every delivery
+([Standard Webhooks](https://www.standardwebhooks.com/)), retries failures durably
+for up to 48 hours and keeps the delivery history. Outbound webhooks are in pilot:
+the account needs the `outbound` feature.
+
+```go
+// Once per customer.
+_, err = api.UpsertOutboundEventType(&webhookrelay.OutboundEventTypeOptions{Name: "invoice.paid"})
+_, err = api.UpsertOutboundConsumer(&webhookrelay.OutboundConsumerOptions{ID: "customer_42", Name: "Acme"})
+endpoint, err := api.CreateOutboundEndpoint(&webhookrelay.OutboundEndpointOptions{
+	Consumer:   "customer_42",
+	URL:        "https://customer.example/webhooks",
+	EventTypes: []string{"invoice.paid"},
+})
+// endpoint.Secret is the signing secret your customer verifies deliveries with.
+
+// Every time the event happens.
+message, err := api.PublishOutboundMessage(&webhookrelay.OutboundMessagePublishOptions{
+	Consumer:       "customer_42",
+	EventType:      "invoice.paid",
+	Payload:        map[string]interface{}{"invoice_id": "inv_123", "amount": 4900},
+	IdempotencyKey: "invoice-paid:inv_123", // retrying with the same key never publishes twice
+})
+```
+
+Publishing is asynchronous: the returned message is the durable acceptance
+receipt. `GetOutboundMessage` shows each endpoint's delivery and attempts;
+`RetryOutboundDelivery`, `RecoverOutboundDeliveries` and
+`ReplayMissingOutboundDeliveries` re-send in the background and return a
+recovery task. Without an `IdempotencyKey` the client generates one per call,
+so its own automatic retries are safe. A runnable version lives in
+[`examples/outbound`](examples/outbound).
+
 ## More capabilities
 
 The client covers the rest of the Webhook Relay API too:

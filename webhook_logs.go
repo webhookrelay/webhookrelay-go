@@ -15,11 +15,12 @@ type RequestStatus string
 
 // default statuses
 const (
-	RequestStatusReceived RequestStatus = "received"
-	RequestStatusSent     RequestStatus = "sent"
-	RequestStatusFailed   RequestStatus = "failed"
-	RequestStatusStalled  RequestStatus = "stalled"
-	RequestStatusRejected RequestStatus = "rejected"
+	RequestStatusPreparing RequestStatus = "preparing"
+	RequestStatusReceived  RequestStatus = "received"
+	RequestStatusSent      RequestStatus = "sent"
+	RequestStatusFailed    RequestStatus = "failed"
+	RequestStatusStalled   RequestStatus = "stalled"
+	RequestStatusRejected  RequestStatus = "rejected"
 )
 
 // Log - received webhook event
@@ -32,6 +33,11 @@ type Log struct {
 	OutputID  string `json:"output_id"`
 	InputID   string `json:"input_id"`
 	BucketID  string `json:"bucket_id"`
+
+	// Outbound deliveries identify their message; see PublishOutboundMessage.
+	MessageID  string `json:"message_id,omitempty"`
+	ConsumerID string `json:"consumer_id,omitempty"`
+	EventType  string `json:"event_type,omitempty"`
 
 	Internal        bool          `json:"internal"`
 	StatusCode      int           `json:"status_code"`
