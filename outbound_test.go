@@ -96,6 +96,14 @@ func TestOutboundRequests(t *testing.T) {
 			method: http.MethodGet, path: "/outbound/endpoints/endpoint-1/deliveries", query: "limit=5",
 		},
 		{
+			name: "filter deliveries",
+			call: func(api *API) error {
+				_, err := api.ListOutboundDeliveries(&OutboundDeliveryListOptions{EndpointID: "endpoint-1", Status: "failed", EventType: "invoice.paid", MessageID: "message-1"})
+				return err
+			},
+			method: http.MethodGet, path: "/outbound/endpoints/endpoint-1/deliveries", query: "event_type=invoice.paid&message_id=message-1&status=failed",
+		},
+		{
 			name: "retry delivery",
 			call: func(api *API) error {
 				_, err := api.RetryOutboundDelivery("endpoint-1", "message-1")

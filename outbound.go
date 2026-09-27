@@ -130,6 +130,9 @@ type OutboundMessage struct {
 	EnqueuedAt *time.Time `json:"enqueued_at,omitempty"`
 	// Deliveries are set by GetOutboundMessage: one per addressed endpoint.
 	Deliveries []*Log `json:"deliveries,omitempty"`
+	// UnavailableEndpointIDs are set by GetOutboundMessage for endpoints whose
+	// delivery could not be read in time; ask again later.
+	UnavailableEndpointIDs []string `json:"unavailable_endpoint_ids,omitempty"`
 }
 
 // OutboundMessagePublishOptions publishes a message.
@@ -160,6 +163,13 @@ type OutboundDeliveryListOptions struct {
 	EndpointID string
 	Limit      int
 	Offset     int
+	// Status keeps deliveries in one status: sent, failed, stalled (a retry
+	// is scheduled), received (queued) or rejected (skipped).
+	Status string
+	// EventType keeps deliveries of one event type.
+	EventType string
+	// MessageID keeps the delivery of one message.
+	MessageID string
 }
 
 // OutboundRecoveryTask is the progress of a background re-send.
@@ -331,6 +341,11 @@ func (api *API) ListOutboundMessages(options *OutboundMessageListOptions) ([]*Ou
 func (api *API) ListOutboundDeliveries(options *OutboundDeliveryListOptions) ([]*Log, error) {
 	query := url.Values{}
 	setPage(query, options.Limit, options.Offset)
+	for key, value := range map[string]string{"status": options.Status, "event_type": options.EventType, "message_id": options.MessageID} {
+		if value != "" {
+			query.Set(key, value)
+		}
+	}
 	path := withQuery(outboundPath("endpoints", options.EndpointID, "deliveries"), query)
 	var deliveries []*Log
 	err := api.outbound(http.MethodGet, path, nil, &deliveries, nil)
