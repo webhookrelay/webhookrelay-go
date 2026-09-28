@@ -88,10 +88,44 @@ type OutboundEndpoint struct {
 	PreviousSecretExpiresAt *time.Time `json:"previous_secret_expires_at,omitempty"`
 	CreatedAt               time.Time  `json:"created_at"`
 	UpdatedAt               time.Time  `json:"updated_at"`
+	// Stats are the endpoint's delivery attempts and failures over the last
+	// 24 hours. Read-only; set when endpoints are listed or read, nil on the
+	// endpoint returned by CreateOutboundEndpoint.
+	Stats *OutboundEndpointStats `json:"stats,omitempty"`
 
 	// Secret is the signing secret. It is only set on the endpoint returned by
 	// CreateOutboundEndpoint.
 	Secret string `json:"secret,omitempty"`
+}
+
+// OutboundEndpointStats counts delivery attempts and how many of them failed.
+type OutboundEndpointStats struct {
+	Attempts int64 `json:"attempts"`
+	Failures int64 `json:"failures"`
+}
+
+// OutboundHealth summarizes all of your endpoints.
+type OutboundHealth struct {
+	// Endpoints counts live endpoints by state (OutboundEndpointState*). Every
+	// state is present, zero when no endpoint is in it.
+	Endpoints map[string]int64 `json:"endpoints"`
+	// Stats are the attempts and failures across all endpoints since Since.
+	Stats OutboundEndpointStats `json:"stats"`
+	// Since is the start of the window the stats cover: 24 hours ago, to the
+	// hour.
+	Since time.Time `json:"since"`
+}
+
+// OutboundEndpointListOptions filters and pages endpoints across consumers.
+type OutboundEndpointListOptions struct {
+	// State keeps endpoints in one state (OutboundEndpointState*). Failing
+	// endpoints come longest failing first.
+	State string
+	// Consumer keeps one consumer's endpoints.
+	Consumer string
+	// Limit is the page size, 1-100; 0 means 50.
+	Limit  int
+	Offset int
 }
 
 // OutboundEndpointOptions configures an endpoint.
@@ -130,6 +164,9 @@ type OutboundMessage struct {
 	EnqueuedAt *time.Time `json:"enqueued_at,omitempty"`
 	// Deliveries are set by GetOutboundMessage: one per addressed endpoint.
 	Deliveries []*Log `json:"deliveries,omitempty"`
+	// UnavailableEndpointIDs are set by GetOutboundMessage for endpoints whose
+	// delivery could not be read in time; ask again later.
+	UnavailableEndpointIDs []string `json:"unavailable_endpoint_ids,omitempty"`
 }
 
 // OutboundMessagePublishOptions publishes a message.
@@ -160,6 +197,13 @@ type OutboundDeliveryListOptions struct {
 	EndpointID string
 	Limit      int
 	Offset     int
+	// Status keeps deliveries in one status: sent, failed, stalled (a retry
+	// is scheduled), received (queued) or rejected (skipped).
+	Status string
+	// EventType keeps deliveries of one event type.
+	EventType string
+	// MessageID keeps the delivery of one message.
+	MessageID string
 }
 
 // OutboundRecoveryTask is the progress of a background re-send.
@@ -231,11 +275,40 @@ func (api *API) DeleteOutboundEventType(name string) error {
 	return api.outbound(http.MethodDelete, outboundPath("event-types", name), nil, nil, nil)
 }
 
-// ListOutboundEndpoints returns a consumer's endpoints, newest first.
+// ListOutboundEndpoints returns a consumer's endpoints, newest first, with
+// their stats.
 func (api *API) ListOutboundEndpoints(consumer string) ([]*OutboundEndpoint, error) {
 	var endpoints []*OutboundEndpoint
 	err := api.outbound(http.MethodGet, outboundPath("consumers", consumer, "endpoints"), nil, &endpoints, nil)
 	return endpoints, err
+}
+
+// ListAllOutboundEndpoints returns endpoints across all consumers, for example
+// to find the failing ones. Failing endpoints come longest failing first,
+// others newest first. Each endpoint carries its stats. Signing secrets are
+// not included.
+func (api *API) ListAllOutboundEndpoints(options *OutboundEndpointListOptions) ([]*OutboundEndpoint, error) {
+	if options == nil {
+		options = &OutboundEndpointListOptions{}
+	}
+	query := url.Values{}
+	setQuery(query, "state", options.State)
+	setQuery(query, "consumer", options.Consumer)
+	setPage(query, options.Limit, options.Offset)
+	var endpoints []*OutboundEndpoint
+	err := api.outbound(http.MethodGet, withQuery(outboundPath("endpoints"), query), nil, &endpoints, nil)
+	return endpoints, err
+}
+
+// GetOutboundHealth counts your endpoints by state and their delivery attempts
+// and failures over the last 24 hours, to the hour. Attempts are counted
+// within about 15 seconds.
+func (api *API) GetOutboundHealth() (*OutboundHealth, error) {
+	var health OutboundHealth
+	if err := api.outbound(http.MethodGet, outboundPath("health"), nil, &health, nil); err != nil {
+		return nil, err
+	}
+	return &health, nil
 }
 
 // GetOutboundEndpoint returns an endpoint by ID.
@@ -331,6 +404,11 @@ func (api *API) ListOutboundMessages(options *OutboundMessageListOptions) ([]*Ou
 func (api *API) ListOutboundDeliveries(options *OutboundDeliveryListOptions) ([]*Log, error) {
 	query := url.Values{}
 	setPage(query, options.Limit, options.Offset)
+	for key, value := range map[string]string{"status": options.Status, "event_type": options.EventType, "message_id": options.MessageID} {
+		if value != "" {
+			query.Set(key, value)
+		}
+	}
 	path := withQuery(outboundPath("endpoints", options.EndpointID, "deliveries"), query)
 	var deliveries []*Log
 	err := api.outbound(http.MethodGet, path, nil, &deliveries, nil)

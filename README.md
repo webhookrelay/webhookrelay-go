@@ -257,8 +257,24 @@ receipt. `GetOutboundMessage` shows each endpoint's delivery and attempts;
 `RetryOutboundDelivery`, `RecoverOutboundDeliveries` and
 `ReplayMissingOutboundDeliveries` re-send in the background and return a
 recovery task. Without an `IdempotencyKey` the client generates one per call,
-so its own automatic retries are safe. A runnable version lives in
-[`examples/outbound`](examples/outbound).
+so its own automatic retries are safe.
+
+Watch endpoint health across all your customers. Endpoints carry `Stats`
+(attempts and failures over the last 24 hours) when listed or read:
+
+```go
+health, err := api.GetOutboundHealth()
+// health.Endpoints["failing"], health.Stats.Attempts, health.Stats.Failures
+
+// Failing endpoints come longest failing first. Filter by Consumer too;
+// Limit is 1-100 (0 means 50), page with Offset.
+failing, err := api.ListAllOutboundEndpoints(&webhookrelay.OutboundEndpointListOptions{
+	State: webhookrelay.OutboundEndpointStateFailing,
+	Limit: 20,
+})
+```
+
+A runnable version lives in [`examples/outbound`](examples/outbound).
 
 ## More capabilities
 

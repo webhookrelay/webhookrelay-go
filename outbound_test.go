@@ -88,12 +88,44 @@ func TestOutboundRequests(t *testing.T) {
 			method: http.MethodGet, path: "/outbound/messages", query: "consumer=customer_42&limit=10&offset=20",
 		},
 		{
+			name: "list all endpoints",
+			call: func(api *API) error {
+				_, err := api.ListAllOutboundEndpoints(nil)
+				return err
+			},
+			method: http.MethodGet, path: "/outbound/endpoints",
+		},
+		{
+			name: "filter endpoints across consumers",
+			call: func(api *API) error {
+				_, err := api.ListAllOutboundEndpoints(&OutboundEndpointListOptions{State: OutboundEndpointStateFailing, Consumer: "customer:42", Limit: 100, Offset: 20})
+				return err
+			},
+			method: http.MethodGet, path: "/outbound/endpoints", query: "consumer=customer%3A42&limit=100&offset=20&state=failing",
+		},
+		{
+			name: "outbound health",
+			call: func(api *API) error {
+				_, err := api.GetOutboundHealth()
+				return err
+			},
+			method: http.MethodGet, path: "/outbound/health",
+		},
+		{
 			name: "list deliveries",
 			call: func(api *API) error {
 				_, err := api.ListOutboundDeliveries(&OutboundDeliveryListOptions{EndpointID: "endpoint-1", Limit: 5})
 				return err
 			},
 			method: http.MethodGet, path: "/outbound/endpoints/endpoint-1/deliveries", query: "limit=5",
+		},
+		{
+			name: "filter deliveries",
+			call: func(api *API) error {
+				_, err := api.ListOutboundDeliveries(&OutboundDeliveryListOptions{EndpointID: "endpoint-1", Status: "failed", EventType: "invoice.paid", MessageID: "message-1"})
+				return err
+			},
+			method: http.MethodGet, path: "/outbound/endpoints/endpoint-1/deliveries", query: "event_type=invoice.paid&message_id=message-1&status=failed",
 		},
 		{
 			name: "retry delivery",
@@ -126,7 +158,7 @@ func TestOutboundRequests(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			response := `{}`
-			if tt.method == http.MethodGet {
+			if tt.method == http.MethodGet && tt.path != "/outbound/health" {
 				response = `[]`
 			}
 			api, requests := outboundServer(t, response)
@@ -201,6 +233,69 @@ func TestGetOutboundMessageDecodesDeliveries(t *testing.T) {
 	delivery := message.Deliveries[0]
 	if delivery.MessageID != "message-1" || delivery.Status != RequestStatusSent || delivery.CreatedAt.Unix() != 1788256800 {
 		t.Fatalf("unexpected delivery: %+v", delivery)
+	}
+}
+
+func TestListAllOutboundEndpointsDecodesStats(t *testing.T) {
+	api, _ := outboundServer(t, `[{
+		"id": "endpoint-1",
+		"consumer": "customer_42",
+		"url": "https://example.com/hook",
+		"event_types": ["*"],
+		"state": "failing",
+		"consecutive_failures": 7,
+		"failing_since": "2026-09-27T10:00:00Z",
+		"stats": {"attempts": 12, "failures": 7}
+	}, {"id": "endpoint-2", "state": "active"}]`)
+	endpoints, err := api.ListAllOutboundEndpoints(&OutboundEndpointListOptions{State: OutboundEndpointStateFailing})
+	if err != nil {
+		t.Fatalf("ListAllOutboundEndpoints: %v", err)
+	}
+	if len(endpoints) != 2 {
+		t.Fatalf("endpoints = %+v", endpoints)
+	}
+	failing := endpoints[0]
+	if failing.State != OutboundEndpointStateFailing || failing.ConsecutiveFailures != 7 || failing.FailingSince == nil || !failing.FailingSince.Equal(time.Date(2026, 9, 27, 10, 0, 0, 0, time.UTC)) {
+		t.Fatalf("unexpected endpoint: %+v", failing)
+	}
+	if failing.Stats == nil || *failing.Stats != (OutboundEndpointStats{Attempts: 12, Failures: 7}) {
+		t.Fatalf("stats = %+v", failing.Stats)
+	}
+	if endpoints[1].Stats != nil {
+		t.Fatalf("an endpoint without stats decodes to nil stats, got %+v", endpoints[1].Stats)
+	}
+}
+
+func TestGetOutboundEndpointDecodesStats(t *testing.T) {
+	api, _ := outboundServer(t, `{"id": "endpoint-1", "state": "active", "stats": {"attempts": 3, "failures": 0}}`)
+	endpoint, err := api.GetOutboundEndpoint("endpoint-1")
+	if err != nil {
+		t.Fatalf("GetOutboundEndpoint: %v", err)
+	}
+	if endpoint.Stats == nil || endpoint.Stats.Attempts != 3 || endpoint.Stats.Failures != 0 {
+		t.Fatalf("stats = %+v", endpoint.Stats)
+	}
+}
+
+func TestGetOutboundHealth(t *testing.T) {
+	api, _ := outboundServer(t, `{
+		"endpoints": {"active": 3, "failing": 1, "paused": 0, "disabled": 2},
+		"stats": {"attempts": 120, "failures": 9},
+		"since": "2026-09-27T12:00:00Z"
+	}`)
+	health, err := api.GetOutboundHealth()
+	if err != nil {
+		t.Fatalf("GetOutboundHealth: %v", err)
+	}
+	want := map[string]int64{OutboundEndpointStateActive: 3, OutboundEndpointStateFailing: 1, OutboundEndpointStatePaused: 0, OutboundEndpointStateDisabled: 2}
+	if !jsonEqual(health.Endpoints, want) {
+		t.Fatalf("endpoints = %v, want %v", health.Endpoints, want)
+	}
+	if health.Stats != (OutboundEndpointStats{Attempts: 120, Failures: 9}) {
+		t.Fatalf("stats = %+v", health.Stats)
+	}
+	if !health.Since.Equal(time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)) {
+		t.Fatalf("since = %s", health.Since)
 	}
 }
 
