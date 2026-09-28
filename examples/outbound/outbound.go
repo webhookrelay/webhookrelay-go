@@ -46,3 +46,19 @@ func PublishInvoicePaid(api *webhookrelay.API) (*webhookrelay.OutboundMessage, e
 }
 
 // dashboard-snippet:end
+
+// FailingEndpoints lists the endpoints that are failing, longest failing
+// first, with their failures over the last 24 hours.
+func FailingEndpoints(api *webhookrelay.API) ([]*webhookrelay.OutboundEndpoint, error) {
+	health, err := api.GetOutboundHealth()
+	if err != nil {
+		return nil, err
+	}
+	if health.Endpoints[webhookrelay.OutboundEndpointStateFailing] == 0 {
+		return nil, nil
+	}
+	return api.ListAllOutboundEndpoints(&webhookrelay.OutboundEndpointListOptions{
+		State: webhookrelay.OutboundEndpointStateFailing,
+		Limit: 20,
+	})
+}
