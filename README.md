@@ -122,6 +122,10 @@ if _, err := api.UpdateBucket(bucket); err != nil {
 }
 ```
 
+`UpdateBucket` replaces the whole bucket configuration (name, description, flags
+and auth), so always start from `GetBucket` as above; a bucket without a `Name` is
+rejected.
+
 When acting as a WebSocket "transponder" (your client, not Webhook Relay, produces
 the HTTP response), send the response back within 10 seconds using `UpdateWebhookLog`:
 
@@ -229,8 +233,8 @@ _, err = api.CreateOutput(&webhookrelay.Output{
 Register each customer as a consumer with the HTTPS endpoint they give you, then
 publish events. Webhook Relay signs every delivery
 ([Standard Webhooks](https://www.standardwebhooks.com/)), retries failures durably
-for up to 48 hours and keeps the delivery history. Outbound webhooks are in pilot:
-the account needs the `outbound` feature.
+for up to 48 hours and keeps the delivery history. `GetOutboundAccess` reports
+whether outbound webhooks are enabled for your account, and its limits.
 
 ```go
 // Once per customer.
@@ -307,6 +311,18 @@ api, err := webhookrelay.NewWithAPIKey(os.Getenv("RELAY_API_KEY"),
 
 Available options: `WithHTTPClient`, `WithAPIEndpointURL`, `WithHeaders`,
 `WithRetryPolicy`, `WithUserAgent`, `WithLogger`.
+
+## Errors
+
+Non-2xx responses are returned as `*webhookrelay.APIError`, carrying the HTTP
+status and raw response body:
+
+```go
+var apiErr *webhookrelay.APIError
+if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest {
+	log.Printf("invalid request: %s", apiErr.Body)
+}
+```
 
 ## License
 

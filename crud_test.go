@@ -1,8 +1,10 @@
 package webhookrelay
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -42,6 +44,69 @@ func TestDeleteBucketForceQueryParam(t *testing.T) {
 	}
 	if gotQuery != "" {
 		t.Fatalf("expected no query without force, got %q", gotQuery)
+	}
+}
+
+// TestUpdateBucketSendsFullReplace verifies UpdateBucket sends every writable
+// field (PUT /buckets/{id} is a full replace that rejects an empty name) and
+// leaves read-only nested resources out of the body.
+func TestUpdateBucketSendsFullReplace(t *testing.T) {
+	const bucketID = "11111111-1111-1111-1111-111111111111"
+	var gotMethod, gotPath string
+	var gotBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod, gotPath = r.Method, r.URL.Path
+		gotBody = nil
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"` + bucketID + `","name":"orders","description":"updated","stream":true}`))
+	}))
+	defer server.Close()
+
+	client, err := New("k", "s", WithAPIEndpointURL(server.URL))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	updated, err := client.UpdateBucket(&Bucket{
+		ID:          bucketID,
+		Name:        "orders",
+		Description: "updated",
+		Stream:      true,
+		Inputs:      []*Input{{ID: "input-1", Name: "default"}},
+		Outputs:     []*Output{{ID: "output-1", Name: "out"}},
+	})
+	if err != nil {
+		t.Fatalf("UpdateBucket: %v", err)
+	}
+	if gotMethod != http.MethodPut || gotPath != "/buckets/"+bucketID {
+		t.Fatalf("unexpected request: %s %s", gotMethod, gotPath)
+	}
+	for _, key := range []string{"name", "description", "stream", "ephemeral", "large_webhooks", "static_ip", "auth"} {
+		if _, ok := gotBody[key]; !ok {
+			t.Errorf("body is missing %q: %v", key, gotBody)
+		}
+	}
+	for _, key := range []string{"inputs", "outputs", "created_at", "id", "service_connection_inputs"} {
+		if _, ok := gotBody[key]; ok {
+			t.Errorf("body carries read-only %q: %v", key, gotBody)
+		}
+	}
+	if gotBody["name"] != "orders" || gotBody["description"] != "updated" || gotBody["stream"] != true {
+		t.Errorf("unexpected body: %v", gotBody)
+	}
+	if updated.Name != "orders" || !updated.Stream {
+		t.Errorf("unexpected response: %+v", updated)
+	}
+
+	// An empty name would wipe the bucket's name; the API rejects it with 400,
+	// the client refuses before sending.
+	gotMethod = ""
+	if _, err := client.UpdateBucket(&Bucket{ID: bucketID, Stream: true}); err == nil || !strings.Contains(err.Error(), "name is required") {
+		t.Fatalf("expected a name-required error, got %v", err)
+	}
+	if gotMethod != "" {
+		t.Fatalf("a bucket without a name must not be sent")
 	}
 }
 

@@ -279,34 +279,34 @@ func (api *API) makeRequestWithAuthTypeAndHeaders(ctx context.Context, method, u
 		return nil, respErr
 	}
 
-	switch {
-	case resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices:
-	case resp.StatusCode == http.StatusUnauthorized:
-		return nil, errors.Errorf("HTTP status %d: invalid credentials", resp.StatusCode)
-	case resp.StatusCode == http.StatusForbidden:
-		return nil, errors.Errorf("HTTP status %d: insufficient permissions", resp.StatusCode)
-	case resp.StatusCode == http.StatusPreconditionFailed:
-		return nil, errors.Errorf("HTTP status %d: precondition failed", resp.StatusCode)
-	case resp.StatusCode == http.StatusPaymentRequired:
-		return nil, errors.Errorf("HTTP status %d: feature not available for your subscription", resp.StatusCode)
-	case resp.StatusCode == http.StatusServiceUnavailable,
-		resp.StatusCode == http.StatusBadGateway,
-		resp.StatusCode == http.StatusGatewayTimeout,
-		resp.StatusCode == 522,
-		resp.StatusCode == 523,
-		resp.StatusCode == 524:
-		return nil, errors.Errorf("HTTP status %d: service failure", resp.StatusCode)
-	case resp.StatusCode == 400:
-		return nil, errors.Errorf("%s", respBody)
-	default:
-		var s string
-		if respBody != nil {
-			s = string(respBody)
-		}
-		return nil, errors.Errorf("HTTP status %d: content %q", resp.StatusCode, s)
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+		return respBody, nil
 	}
+	return nil, newAPIError(resp.StatusCode, respBody)
+}
 
-	return respBody, nil
+// newAPIError builds the error for a non-2xx response. Its message is kept
+// stable for callers that match on it; the status and body are on the
+// APIError.
+func newAPIError(status int, body []byte) *APIError {
+	apiErr := &APIError{StatusCode: status, Body: string(body)}
+	switch status {
+	case http.StatusUnauthorized:
+		apiErr.message = fmt.Sprintf("HTTP status %d: invalid credentials", status)
+	case http.StatusForbidden:
+		apiErr.message = fmt.Sprintf("HTTP status %d: insufficient permissions", status)
+	case http.StatusPreconditionFailed:
+		apiErr.message = fmt.Sprintf("HTTP status %d: precondition failed", status)
+	case http.StatusPaymentRequired:
+		apiErr.message = fmt.Sprintf("HTTP status %d: feature not available for your subscription", status)
+	case http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusGatewayTimeout, 522, 523, 524:
+		apiErr.message = fmt.Sprintf("HTTP status %d: service failure", status)
+	case http.StatusBadRequest:
+		apiErr.message = string(body)
+	default:
+		apiErr.message = fmt.Sprintf("HTTP status %d: content %q", status, string(body))
+	}
+	return apiErr
 }
 
 // request makes a HTTP request to the given API endpoint, returning the raw
