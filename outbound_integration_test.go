@@ -38,7 +38,15 @@ func TestIntegrationOutbound(t *testing.T) {
 		t.Fatalf("GetOutboundAccess: %v", err)
 	}
 	if !access.Enabled {
-		t.Fatalf("outbound not enabled for the CI account (needs Basic+ plan)")
+		plan := "unknown"
+		if info, err := api.UserInfo(); err == nil && info.Data.PlanID != "" {
+			plan = info.Data.PlanID
+		}
+		request := "none"
+		if access.Request != nil {
+			request = "ticket " + access.Request.TicketID + " opened " + access.Request.RequestedAt.Format(time.RFC3339)
+		}
+		t.Fatalf("outbound not enabled for the CI account (needs Basic+ plan); GET /v1/outbound/access returned enabled=false (plan %s, open access request: %s)", plan, request)
 	}
 	if access.Limits != nil {
 		t.Logf("outbound limits: %d consumers, %d endpoints per consumer, %d event types",
