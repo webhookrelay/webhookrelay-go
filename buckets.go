@@ -197,15 +197,57 @@ func (api *API) CreateBucket(options *BucketCreateOptions) (*Bucket, error) {
 	return &bucket, nil
 }
 
-// UpdateBucket updates a Bucket on the server and returns the updated object.
+// bucketUpdateRequest is the body of PUT /buckets/{id}: the bucket's writable
+// fields. Read-only fields (timestamps, inputs, outputs and other nested
+// resources) are left out, so a bucket fetched with GetBucket can be updated
+// as is.
+type bucketUpdateRequest struct {
+	Name          string           `json:"name"`
+	Description   string           `json:"description"`
+	Stream        bool             `json:"stream"`
+	Ephemeral     bool             `json:"ephemeral"`
+	LargeWebhooks bool             `json:"large_webhooks"`
+	StaticIP      bool             `json:"static_ip"`
+	Auth          bucketUpdateAuth `json:"auth"`
+}
+
+type bucketUpdateAuth struct {
+	Type     AuthType `json:"type"`
+	Username string   `json:"username,omitempty"`
+	Password string   `json:"password,omitempty"`
+	Token    string   `json:"token,omitempty"`
+}
+
+// UpdateBucket replaces a bucket's configuration and returns the updated
+// object. The update is a full replace, not a patch: name, description,
+// stream, ephemeral, large webhooks, static IP and auth are all set from
+// options, so fetch the bucket with GetBucket, change the fields you need and
+// pass it back. Name is required.
 func (api *API) UpdateBucket(options *Bucket) (*Bucket, error) {
+	if options.Name == "" {
+		return nil, errors.New("bucket name is required: UpdateBucket replaces the whole bucket, so start from GetBucket and change the fields you need")
+	}
 	bucketID, err := api.ensureBucketID(options.ID)
 	if err != nil {
 		return nil, err
 	}
 	options.ID = bucketID
 
-	resp, err := api.makeRequest("PUT", "/buckets/"+options.ID, options)
+	body := &bucketUpdateRequest{
+		Name:          options.Name,
+		Description:   options.Description,
+		Stream:        options.Stream,
+		Ephemeral:     options.Ephemeral,
+		LargeWebhooks: options.LargeWebhooks,
+		StaticIP:      options.StaticIP,
+		Auth: bucketUpdateAuth{
+			Type:     options.Auth.Type,
+			Username: options.Auth.Username,
+			Password: options.Auth.Password,
+			Token:    options.Auth.Token,
+		},
+	}
+	resp, err := api.makeRequest("PUT", "/buckets/"+options.ID, body)
 	if err != nil {
 		return nil, err
 	}

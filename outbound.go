@@ -19,7 +19,35 @@ import (
 // delivery (Standard Webhooks), retries failures durably and keeps the
 // delivery history.
 //
-// Outbound webhooks are in pilot: the account needs the "outbound" feature.
+// Outbound webhooks must be enabled for the account; GetOutboundAccess reports
+// whether they are and the account's limits.
+
+// OutboundAccess reports whether outbound webhooks are enabled for the
+// account.
+type OutboundAccess struct {
+	Enabled bool `json:"enabled"`
+	// Request is the open request to enable outbound webhooks, nil when none
+	// was made or they are already enabled.
+	Request *OutboundAccessRequest `json:"request,omitempty"`
+	// Limits are the account's effective outbound limits; nil when they could
+	// not be read.
+	Limits *OutboundLimits `json:"limits,omitempty"`
+}
+
+// OutboundAccessRequest is a support ticket asking to enable outbound
+// webhooks.
+type OutboundAccessRequest struct {
+	TicketID    string    `json:"ticket_id"`
+	RequestedAt time.Time `json:"requested_at"`
+}
+
+// OutboundLimits are how many consumers, endpoints per consumer and event
+// types the account can have.
+type OutboundLimits struct {
+	Consumers            int `json:"consumers"`
+	EndpointsPerConsumer int `json:"endpoints_per_consumer"`
+	EventTypes           int `json:"event_types"`
+}
 
 // OutboundConsumer is one of your customers. You choose its ID, for example
 // your own customer ID.
@@ -149,9 +177,10 @@ type OutboundEndpointOptions struct {
 	// the message.
 	FunctionID string `json:"function_id,omitempty"`
 	// Secret imports an existing Standard Webhooks signing secret ("whsec_"
-	// + base64 of a 24-64 byte key, e.g. exported from Svix) so the consumer
-	// keeps verifying with the key it already has. Only used when creating
-	// an endpoint; omit it to generate a new secret.
+	// + 32-100 base64 characters decoding to at least 24 bytes, e.g. exported
+	// from Svix) so the consumer keeps verifying with the key it already has.
+	// Only used when creating an endpoint; omit it to generate a new secret.
+	// An invalid secret is rejected with a 400 APIError that does not echo it.
 	Secret string `json:"secret,omitempty"`
 }
 
@@ -224,6 +253,28 @@ type OutboundRecoveryTask struct {
 	Error      string    `json:"error,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// GetOutboundAccess reports whether outbound webhooks are enabled for the
+// account, with its limits. It works before they are enabled; every other
+// outbound call answers 403 until then.
+func (api *API) GetOutboundAccess() (*OutboundAccess, error) {
+	var access OutboundAccess
+	if err := api.outbound(http.MethodGet, outboundPath("access"), nil, &access, nil); err != nil {
+		return nil, err
+	}
+	return &access, nil
+}
+
+// RequestOutboundAccess asks support to enable outbound webhooks. Asking again
+// while the request is open returns it; nothing is requested when they are
+// already enabled.
+func (api *API) RequestOutboundAccess() (*OutboundAccess, error) {
+	var access OutboundAccess
+	if err := api.outbound(http.MethodPost, outboundPath("access", "request"), nil, &access, nil); err != nil {
+		return nil, err
+	}
+	return &access, nil
 }
 
 // ListOutboundConsumers returns your consumers.

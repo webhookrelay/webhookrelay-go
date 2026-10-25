@@ -2,9 +2,11 @@ package webhookrelay
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -325,6 +327,55 @@ func TestRevealOutboundEndpointSecret(t *testing.T) {
 	}
 	if got := (*requests)[0]; got.Method != http.MethodPost || got.Path != "/outbound/endpoints/endpoint-1/secret/reveal" {
 		t.Fatalf("unexpected request %s %s", got.Method, got.Path)
+	}
+}
+
+func TestGetOutboundAccess(t *testing.T) {
+	api, requests := outboundServer(t, `{"enabled":true,"limits":{"consumers":100,"endpoints_per_consumer":10,"event_types":300}}`)
+	access, err := api.GetOutboundAccess()
+	if err != nil {
+		t.Fatalf("GetOutboundAccess: %v", err)
+	}
+	if !access.Enabled || access.Request != nil || access.Limits == nil || *access.Limits != (OutboundLimits{Consumers: 100, EndpointsPerConsumer: 10, EventTypes: 300}) {
+		t.Fatalf("unexpected access: %+v", access)
+	}
+	if got := (*requests)[0]; got.Method != http.MethodGet || got.Path != "/outbound/access" {
+		t.Fatalf("unexpected request %s %s", got.Method, got.Path)
+	}
+}
+
+func TestRequestOutboundAccess(t *testing.T) {
+	api, requests := outboundServer(t, `{"enabled":false,"request":{"ticket_id":"ticket-1","requested_at":"2026-10-01T09:00:00Z"}}`)
+	access, err := api.RequestOutboundAccess()
+	if err != nil {
+		t.Fatalf("RequestOutboundAccess: %v", err)
+	}
+	if access.Enabled || access.Request == nil || access.Request.TicketID != "ticket-1" || !access.Request.RequestedAt.Equal(time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)) {
+		t.Fatalf("unexpected access: %+v", access)
+	}
+	if got := (*requests)[0]; got.Method != http.MethodPost || got.Path != "/outbound/access/request" {
+		t.Fatalf("unexpected request %s %s", got.Method, got.Path)
+	}
+}
+
+func TestOutboundErrorsCarryStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"invalid outbound request: secret must be 32 to 100 standard base64 characters, optionally prefixed with \"whsec_\""}`))
+	}))
+	t.Cleanup(server.Close)
+	api, err := NewWithAPIKey("sk-test", WithAPIEndpointURL(server.URL))
+	if err != nil {
+		t.Fatalf("NewWithAPIKey: %v", err)
+	}
+	_, err = api.CreateOutboundEndpoint(&OutboundEndpointOptions{Consumer: "c", URL: "https://example.com", EventTypes: []string{"*"}, Secret: "whsec_short"})
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusBadRequest {
+		t.Fatalf("expected a 400 APIError, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "secret must be") || !strings.Contains(apiErr.Body, "secret must be") {
+		t.Fatalf("error lost the server message: %v", err)
 	}
 }
 

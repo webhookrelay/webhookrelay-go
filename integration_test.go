@@ -66,6 +66,28 @@ func TestIntegrationBucketLifecycle(t *testing.T) {
 		t.Fatalf("GetBucket returned %q, want %q", got.ID, bucket.ID)
 	}
 
+	// PUT /buckets/{id} is a full replace (and rejects an empty name since
+	// 2026-10-04): update a fetched bucket and check nothing else is lost.
+	got.Description = "updated description"
+	updatedBucket, err := client.UpdateBucket(got)
+	if err != nil {
+		t.Fatalf("UpdateBucket: %v", err)
+	}
+	if updatedBucket.Name != bucketName || updatedBucket.Description != "updated description" {
+		t.Fatalf("UpdateBucket returned %+v", updatedBucket)
+	}
+	refetched, err := client.GetBucket(bucket.ID)
+	if err != nil {
+		t.Fatalf("GetBucket after update: %v", err)
+	}
+	if refetched.Name != bucketName || refetched.Description != "updated description" || len(refetched.Inputs) != len(got.Inputs) {
+		t.Fatalf("bucket after update = %+v", refetched)
+	}
+	// A partial update without the name is refused before it reaches the API.
+	if _, err := client.UpdateBucket(&Bucket{ID: bucket.ID, Description: "partial"}); err == nil {
+		t.Fatalf("UpdateBucket without a name must fail")
+	}
+
 	// Polling: listing logs for the bucket must succeed (empty for a fresh
 	// bucket). Exercises the required bucket query parameter.
 	logs, err := client.ListWebhookLogs(&WebhookLogsListOptions{BucketID: bucket.ID, Limit: 10})
@@ -261,6 +283,13 @@ func TestIntegrationBucketLifecycle(t *testing.T) {
 		}
 		if !nestedFound {
 			t.Errorf("email input %s not present in bucket.ServiceConnectionInputs", emailInput.ID)
+		}
+
+		// A bucket carrying nested service-connection inputs must still
+		// update as fetched.
+		withNested.Description = "updated with nested inputs"
+		if _, err := client.UpdateBucket(withNested); err != nil {
+			t.Fatalf("UpdateBucket with nested service-connection inputs: %v", err)
 		}
 	})
 }
