@@ -242,6 +242,8 @@ endpoint, err := api.CreateOutboundEndpoint(&webhookrelay.OutboundEndpointOption
 	EventTypes: []string{"invoice.paid"},
 })
 // endpoint.Secret is the signing secret your customer verifies deliveries with.
+// Migrating from Svix or another Standard Webhooks sender? Set Secret to the
+// endpoint's existing whsec_ secret so your customer keeps verifying with it.
 
 // Every time the event happens.
 message, err := api.PublishOutboundMessage(&webhookrelay.OutboundMessagePublishOptions{

@@ -148,6 +148,11 @@ type OutboundEndpointOptions struct {
 	// FunctionID attaches a Function that can rewrite the JSON body or drop
 	// the message.
 	FunctionID string `json:"function_id,omitempty"`
+	// Secret imports an existing Standard Webhooks signing secret ("whsec_"
+	// + base64 of a 24-64 byte key, e.g. exported from Svix) so the consumer
+	// keeps verifying with the key it already has. Only used when creating
+	// an endpoint; omit it to generate a new secret.
+	Secret string `json:"secret,omitempty"`
 }
 
 // OutboundMessage is an accepted message.
