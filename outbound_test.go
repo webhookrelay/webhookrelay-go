@@ -299,6 +299,24 @@ func TestGetOutboundHealth(t *testing.T) {
 	}
 }
 
+func TestCreateOutboundEndpointImportsSecret(t *testing.T) {
+	const secret = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw"
+	api, requests := outboundServer(t, `{"id":"endpoint-1","secret":"`+secret+`"}`)
+	endpoint, err := api.CreateOutboundEndpoint(&OutboundEndpointOptions{
+		Consumer:   "customer_42",
+		URL:        "https://example.com/hook",
+		EventTypes: []string{"invoice.paid"},
+		Secret:     secret,
+	})
+	if err != nil || endpoint.Secret != secret {
+		t.Fatalf("endpoint = %+v, err = %v", endpoint, err)
+	}
+	want := map[string]interface{}{"url": "https://example.com/hook", "event_types": []string{"invoice.paid"}, "secret": secret}
+	if got := (*requests)[0]; got.Path != "/outbound/consumers/customer_42/endpoints" || !jsonEqual(got.Body, want) {
+		t.Fatalf("unexpected request %s %v", got.Path, got.Body)
+	}
+}
+
 func TestRevealOutboundEndpointSecret(t *testing.T) {
 	api, requests := outboundServer(t, `{"secret":"whsec_abc"}`)
 	secret, err := api.RevealOutboundEndpointSecret("endpoint-1")
