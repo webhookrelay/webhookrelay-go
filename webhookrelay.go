@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -218,6 +219,9 @@ func (api *API) makeRequestWithAuthTypeAndHeaders(ctx context.Context, method, u
 	var respErr error
 	var reqBody io.Reader
 	var respBody []byte
+	// retryAfter is the server's Retry-After on the last response, which
+	// replaces the backoff for the next attempt.
+	var retryAfter time.Duration
 	for i := 0; i <= api.retryPolicy.MaxRetries; i++ {
 		if jsonBody != nil {
 			reqBody = bytes.NewReader(jsonBody)
@@ -230,6 +234,9 @@ func (api *API) makeRequestWithAuthTypeAndHeaders(ctx context.Context, method, u
 
 			if sleepDuration > api.retryPolicy.MaxRetryDelay {
 				sleepDuration = api.retryPolicy.MaxRetryDelay
+			}
+			if retryAfter > 0 {
+				sleepDuration = retryAfter
 			}
 			// useful to do some simple logging here, maybe introduce levels later
 			api.logger.Printf("Sleeping %s before retry attempt number %d for request %s %s", sleepDuration.String(), i, method, uri)
@@ -262,6 +269,12 @@ func (api *API) makeRequestWithAuthTypeAndHeaders(ctx context.Context, method, u
 
 				api.logger.Printf("Request: %s %s got an error response %d: %s\n", method, uri, resp.StatusCode,
 					strings.Replace(strings.Replace(string(respBody), "\n", "", -1), "\t", "", -1))
+
+				var retry bool
+				retry, retryAfter = api.shouldRetry(resp, respBody)
+				if !retry {
+					break
+				}
 			} else {
 				api.logger.Printf("Error performing request: %s %s : %s \n", method, uri, respErr.Error())
 			}
@@ -283,6 +296,67 @@ func (api *API) makeRequestWithAuthTypeAndHeaders(ctx context.Context, method, u
 		return respBody, nil
 	}
 	return nil, newAPIError(resp.StatusCode, respBody)
+}
+
+// shouldRetry decides whether a 429 or 5xx response is worth retrying, and
+// how long to wait first when the server said so (zero means the policy's
+// backoff). A 429 for an exhausted quota, or one whose Retry-After is beyond
+// the policy's max retry delay, would fail again within the retries, so it
+// is returned to the caller straight away.
+func (api *API) shouldRetry(resp *http.Response, body []byte) (bool, time.Duration) {
+	if resp.StatusCode != http.StatusTooManyRequests {
+		return true, 0
+	}
+	if isQuotaExhausted(body) {
+		return false, 0
+	}
+	header := resp.Header.Get("Retry-After")
+	if header == "" {
+		return true, 0
+	}
+	wait, ok := parseRetryAfter(header, time.Now())
+	if !ok {
+		return true, 0
+	}
+	if wait > api.retryPolicy.MaxRetryDelay {
+		return false, 0
+	}
+	return true, wait
+}
+
+// isQuotaExhausted reports whether a 429 body is one that lasts until the
+// next billing period: the Outbound Gateway's monthly message quota
+// ({"error": "monthly outbound message quota reached: ..."}) or the agent's
+// monthly token allowance ({"code": "agent_quota_exceeded"}).
+func isQuotaExhausted(body []byte) bool {
+	var payload struct {
+		Error string `json:"error"`
+		Code  string `json:"code"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return false
+	}
+	return payload.Code == "agent_quota_exceeded" ||
+		strings.HasPrefix(payload.Error, "monthly outbound message quota reached")
+}
+
+// parseRetryAfter reads a Retry-After header given in seconds or as an HTTP
+// date.
+func parseRetryAfter(header string, now time.Time) (time.Duration, bool) {
+	if secs, err := strconv.Atoi(header); err == nil {
+		if secs < 0 {
+			return 0, false
+		}
+		return time.Duration(secs) * time.Second, true
+	}
+	at, err := http.ParseTime(header)
+	if err != nil {
+		return 0, false
+	}
+	if wait := at.Sub(now); wait > 0 {
+		return wait, true
+	}
+	return 0, true
 }
 
 // newAPIError builds the error for a non-2xx response. Its message is kept
