@@ -312,17 +312,29 @@ api, err := webhookrelay.NewWithAPIKey(os.Getenv("RELAY_API_KEY"),
 Available options: `WithHTTPClient`, `WithAPIEndpointURL`, `WithHeaders`,
 `WithRetryPolicy`, `WithUserAgent`, `WithLogger`.
 
-## Errors
+## Handling errors
 
-Non-2xx responses are returned as `*webhookrelay.APIError`, carrying the HTTP
-status and raw response body:
+Non-2xx responses are returned as `*webhookrelay.APIError` with the HTTP
+status, the `error` message from a `{"error":"..."}` body, the raw body and
+any `Retry-After` delay. Transport failures are plain errors, so a network
+blip is never mistaken for a 404:
 
 ```go
-var apiErr *webhookrelay.APIError
-if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusBadRequest {
-	log.Printf("invalid request: %s", apiErr.Body)
+_, err := api.PublishOutboundMessage(&webhookrelay.OutboundMessagePublishOptions{...})
+switch {
+case err == nil:
+case webhookrelay.IsNotFound(err):
+	// the consumer has no endpoints yet
+case webhookrelay.IsBadRequest(err):
+	var apiErr *webhookrelay.APIError
+	errors.As(err, &apiErr)
+	showToUser(apiErr.Message)
+default:
+	return err
 }
 ```
+
+`IsConflict` and `IsRateLimited` cover 409 and 429.
 
 ## License
 
