@@ -295,7 +295,7 @@ func (api *API) makeRequestWithAuthTypeAndHeaders(ctx context.Context, method, u
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
 		return respBody, nil
 	}
-	return nil, newAPIError(resp.StatusCode, respBody)
+	return nil, newAPIError(resp.StatusCode, resp.Header, respBody)
 }
 
 // shouldRetry decides whether a 429 or 5xx response is worth retrying, and
@@ -357,30 +357,6 @@ func parseRetryAfter(header string, now time.Time) (time.Duration, bool) {
 		return wait, true
 	}
 	return 0, true
-}
-
-// newAPIError builds the error for a non-2xx response. Its message is kept
-// stable for callers that match on it; the status and body are on the
-// APIError.
-func newAPIError(status int, body []byte) *APIError {
-	apiErr := &APIError{StatusCode: status, Body: string(body)}
-	switch status {
-	case http.StatusUnauthorized:
-		apiErr.message = fmt.Sprintf("HTTP status %d: invalid credentials", status)
-	case http.StatusForbidden:
-		apiErr.message = fmt.Sprintf("HTTP status %d: insufficient permissions", status)
-	case http.StatusPreconditionFailed:
-		apiErr.message = fmt.Sprintf("HTTP status %d: precondition failed", status)
-	case http.StatusPaymentRequired:
-		apiErr.message = fmt.Sprintf("HTTP status %d: feature not available for your subscription", status)
-	case http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusGatewayTimeout, 522, 523, 524:
-		apiErr.message = fmt.Sprintf("HTTP status %d: service failure", status)
-	case http.StatusBadRequest:
-		apiErr.message = string(body)
-	default:
-		apiErr.message = fmt.Sprintf("HTTP status %d: content %q", status, string(body))
-	}
-	return apiErr
 }
 
 // request makes a HTTP request to the given API endpoint, returning the raw
