@@ -311,12 +311,18 @@ if err != nil {
 	return err
 }
 // One import runs at a time: sending the same import again returns the
-// running task, a different one gets a 409.
+// running task, a different one gets a 409. Bound the wait with
+// api.WithContext.
 for !task.Done() {
 	time.Sleep(2 * time.Second)
 	if task, err = api.GetOutboundImport(task.ID); err != nil {
 		return err
 	}
+}
+if task.Status == webhookrelay.OutboundImportStatusFailed {
+	// Errors lists refused items when nothing was written; otherwise Error
+	// names the item that stopped it, and starting it again resumes it.
+	return fmt.Errorf("import %s failed: %s", task.ID, task.Error)
 }
 ```
 

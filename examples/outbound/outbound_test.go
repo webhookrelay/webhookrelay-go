@@ -1,12 +1,14 @@
 package outbound
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/webhookrelay/webhookrelay-go"
 )
@@ -134,7 +136,7 @@ func TestExampleImportsCustomers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	task, err := ImportCustomers(api, "https://customer.example/webhooks", 0)
+	task, err := ImportCustomers(context.Background(), api, "https://customer.example/webhooks", 0)
 	if err != nil {
 		t.Fatalf("ImportCustomers: %v", err)
 	}
@@ -158,9 +160,48 @@ func TestExampleImportReportsRefusedItems(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	task, err := ImportCustomers(api, "http://x", 0)
+	task, err := ImportCustomers(context.Background(), api, "http://x", 0)
 	var apiErr *webhookrelay.APIError
 	if task != nil || !errors.As(err, &apiErr) || len(apiErr.ImportErrors) != 1 {
 		t.Fatalf("expected a refusal listing one item, got %v, %v", task, err)
+	}
+}
+
+func TestExampleImportReportsAFailedImport(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"import-1","status":"failed","error":"1 invalid item(s)","errors":[{"kind":"endpoint","index":0,"error":"resolves to 10.0.0.5"}]}`))
+	}))
+	defer server.Close()
+	api, err := webhookrelay.NewWithAPIKey("sk-test", webhookrelay.WithAPIEndpointURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, err := ImportCustomers(context.Background(), api, "https://customer.example/webhooks", 0)
+	if err == nil || task == nil || len(task.Errors) != 1 {
+		t.Fatalf("a failed import is an error that keeps the task, got %+v, %v", task, err)
+	}
+}
+
+func TestExampleImportStopsWhenItsContextEnds(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"import-1","status":"running"}`)) // never finishes
+	}))
+	defer server.Close()
+	api, err := webhookrelay.NewWithAPIKey("sk-test", webhookrelay.WithAPIEndpointURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	started := time.Now()
+	_, err = ImportCustomers(ctx, api, "https://customer.example/webhooks", 10*time.Millisecond)
+	// The client's rate limiter may refuse a request that would outlast the
+	// deadline before it arrives, in its own words.
+	if err == nil || time.Since(started) > time.Second {
+		t.Fatalf("expected the import to stop at the context's deadline, got %v after %s", err, time.Since(started))
 	}
 }

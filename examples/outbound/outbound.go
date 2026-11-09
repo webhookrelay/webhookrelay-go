@@ -4,6 +4,8 @@
 package outbound
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"time"
 
@@ -65,10 +67,12 @@ func FailingEndpoints(api *webhookrelay.API) ([]*webhookrelay.OutboundEndpoint, 
 }
 
 // ImportCustomers migrates customers from another sender in one request and
-// waits for the import to finish, checking every poll. A refused import
-// returns a 400 *webhookrelay.APIError whose ImportErrors list the items to
-// fix; nothing was written then. Bound a large import with api.WithContext.
-func ImportCustomers(api *webhookrelay.API, customerURL string, poll time.Duration) (*webhookrelay.OutboundImport, error) {
+// waits for the import to finish, checking every poll until ctx is done. A
+// refused import returns a 400 *webhookrelay.APIError whose ImportErrors list
+// the items to fix (nothing was written then); a failed one returns the task,
+// whose Error and Errors say why, with an error.
+func ImportCustomers(ctx context.Context, api *webhookrelay.API, customerURL string, poll time.Duration) (*webhookrelay.OutboundImportTask, error) {
+	api = api.WithContext(ctx)
 	task, err := api.StartOutboundImport(&webhookrelay.OutboundImportOptions{
 		EventTypes: []webhookrelay.OutboundImportEventType{{Name: "invoice.paid"}},
 		Consumers:  []webhookrelay.OutboundImportConsumer{{ID: "customer_42", Name: "Acme"}},
@@ -83,10 +87,17 @@ func ImportCustomers(api *webhookrelay.API, customerURL string, poll time.Durati
 		return nil, err
 	}
 	for !task.Done() {
-		time.Sleep(poll)
+		select {
+		case <-ctx.Done():
+			return task, fmt.Errorf("import %s still %s: %w", task.ID, task.Status, ctx.Err())
+		case <-time.After(poll):
+		}
 		if task, err = api.GetOutboundImport(task.ID); err != nil {
 			return nil, err
 		}
+	}
+	if task.Status != webhookrelay.OutboundImportStatusCompleted {
+		return task, fmt.Errorf("import %s %s: %s", task.ID, task.Status, task.Error)
 	}
 	return task, nil
 }

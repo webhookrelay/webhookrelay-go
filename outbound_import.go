@@ -36,7 +36,8 @@ type OutboundImportOptions struct {
 type OutboundImportEventType struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-	// Example is any value that encodes to JSON.
+	// Example is any value that encodes to JSON; pass raw JSON bytes as a
+	// json.RawMessage, since a []byte encodes as a base64 string.
 	Example    interface{} `json:"example,omitempty"`
 	Deprecated bool        `json:"deprecated,omitempty"`
 }
@@ -66,8 +67,10 @@ type OutboundImportEndpoint struct {
 	// Credentials authenticate a cloud endpoint; write-only.
 	Credentials *OutboundEndpointCredentials `json:"credentials,omitempty"`
 	// Secret imports an existing Standard Webhooks signing secret (e.g. from
-	// Svix) so the consumer keeps verifying with it; omit it to generate one.
-	// Write-only, never returned.
+	// Svix) so the consumer keeps verifying with it: "whsec_" + 32-100 base64
+	// characters decoding to at least 24 bytes. Omit it to generate one.
+	// Write-only, never returned; an invalid one is refused without echoing
+	// it.
 	Secret string `json:"secret,omitempty"`
 	// EventTypes lists the event types to deliver, or []string{"*"} for all.
 	EventTypes  []string          `json:"event_types"`
@@ -131,8 +134,8 @@ const (
 	OutboundImportStatusFailed    = "failed"
 )
 
-// OutboundImport is the progress of a bulk import.
-type OutboundImport struct {
+// OutboundImportTask is the progress of a bulk import.
+type OutboundImportTask struct {
 	ID string `json:"id"`
 	// Status is an OutboundImportStatus* constant.
 	Status string `json:"status"`
@@ -143,20 +146,23 @@ type OutboundImport struct {
 	EventTypes OutboundImportCounts `json:"event_types"`
 	Consumers  OutboundImportCounts `json:"consumers"`
 	Endpoints  OutboundImportCounts `json:"endpoints"`
-	// Errors are the items that failed validation in the background (an
-	// endpoint host that resolves to a private address); nothing was written
-	// then.
-	Errors      []OutboundImportItemError `json:"errors,omitempty"`
-	Error       string                    `json:"error,omitempty"`
-	CreatedAt   time.Time                 `json:"created_at"`
-	UpdatedAt   time.Time                 `json:"updated_at"`
-	CompletedAt *time.Time                `json:"completed_at,omitempty"`
+	// Errors are the items the background validation refused (an endpoint
+	// host that resolves to a private address, a Function deleted since the
+	// import started); nothing was written then.
+	Errors []OutboundImportItemError `json:"errors,omitempty"`
+	// Error says why a failed import stopped. When Errors is empty, the
+	// items before the one that stopped it may already exist; starting the
+	// same import again resumes it.
+	Error       string     `json:"error,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
 // Done reports whether the import has finished. Any status but pending,
 // validating and running is final, including ones added after this release;
 // a task without a status is not.
-func (i *OutboundImport) Done() bool {
+func (i *OutboundImportTask) Done() bool {
 	switch i.Status {
 	case "", OutboundImportStatusPending, OutboundImportStatusValidating, OutboundImportStatusRunning:
 		return false
@@ -172,18 +178,19 @@ func (i *OutboundImport) Done() bool {
 // Invalid items refuse the whole import with a 400 APIError whose
 // ImportErrors list up to 100 of them (nothing is written; Message gives the
 // total). An empty or oversized import is refused with Message alone. For a
-// 400, err.Error() is the raw body, item keys and their endpoint URLs
-// included. Sending the same import again while it runs returns the running
-// task, so the client's automatic retries are safe; if it already finished, a
-// retry starts a new import that finds every item unchanged. A different
+// 400 the *APIError's Error() is the raw body (the returned error wraps it),
+// item keys and their endpoint URLs included. Sending the same import again
+// while it runs returns the running task, so the client's automatic retries
+// are safe; if it already finished, a retry starts a new import, which finds
+// the items of a completed one unchanged and resumes a failed one. A different
 // import answers 409 (IsConflict) until the running one finishes, and a body
 // over OutboundMaxImportBytes answers 413. A large import can take a while to
 // upload and validate: bound it with WithContext.
-func (api *API) StartOutboundImport(options *OutboundImportOptions) (*OutboundImport, error) {
+func (api *API) StartOutboundImport(options *OutboundImportOptions) (*OutboundImportTask, error) {
 	if options == nil {
 		options = &OutboundImportOptions{}
 	}
-	var task OutboundImport
+	var task OutboundImportTask
 	if err := api.outbound(http.MethodPost, outboundPath("imports"), options, &task, nil); err != nil {
 		return nil, err
 	}
@@ -191,8 +198,8 @@ func (api *API) StartOutboundImport(options *OutboundImportOptions) (*OutboundIm
 }
 
 // GetOutboundImport returns an import's progress.
-func (api *API) GetOutboundImport(id string) (*OutboundImport, error) {
-	var task OutboundImport
+func (api *API) GetOutboundImport(id string) (*OutboundImportTask, error) {
+	var task OutboundImportTask
 	if err := api.outbound(http.MethodGet, outboundPath("imports", id), nil, &task, nil); err != nil {
 		return nil, err
 	}

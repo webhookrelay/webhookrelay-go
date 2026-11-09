@@ -200,3 +200,45 @@ func jsonFields(typ reflect.Type) map[string]jsonField {
 	}
 	return fields
 }
+
+func TestStartOutboundImportTooLarge(t *testing.T) {
+	api := errorServer(t, http.StatusRequestEntityTooLarge, `{"error":"the import exceeds 10 MiB; split it into several imports"}`, nil)
+	_, err := api.StartOutboundImport(nil)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusRequestEntityTooLarge || apiErr.ImportErrors != nil {
+		t.Fatalf("expected a 413 APIError without items, got %v", err)
+	}
+}
+
+func TestOutboundImportDoneForEveryFinalStatus(t *testing.T) {
+	for status, done := range map[string]bool{
+		OutboundImportStatusPending: false, OutboundImportStatusValidating: false, OutboundImportStatusRunning: false,
+		OutboundImportStatusCompleted: true, OutboundImportStatusFailed: true,
+		"cancelled": true,  // a final status added after this release
+		"":          false, // a task whose status could not be read
+	} {
+		if got := (&OutboundImportTask{Status: status}).Done(); got != done {
+			t.Errorf("Done() for %q = %v, want %v", status, got, done)
+		}
+	}
+}
+
+func TestStartOutboundImportWithoutOptionsSendsAnEmptyImport(t *testing.T) {
+	api, requests := outboundServer(t, `{"id":"import-1","status":"pending"}`)
+	if _, err := api.StartOutboundImport(nil); err != nil {
+		t.Fatalf("StartOutboundImport: %v", err)
+	}
+	if got := (*requests)[0].Body; !jsonEqual(got, map[string]interface{}{}) {
+		t.Fatalf("expected an empty import object, got %#v", got)
+	}
+}
+
+func TestGetOutboundImportEscapesTheID(t *testing.T) {
+	api, requests := outboundServer(t, `{"id":"import/1","status":"running"}`)
+	if _, err := api.GetOutboundImport("import/1"); err != nil {
+		t.Fatalf("GetOutboundImport: %v", err)
+	}
+	if got := (*requests)[0].Path; got != "/outbound/imports/import%2F1" {
+		t.Fatalf("path = %s", got)
+	}
+}
