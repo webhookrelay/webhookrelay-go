@@ -280,7 +280,80 @@ failing, err := api.ListAllOutboundEndpoints(&webhookrelay.OutboundEndpointListO
 })
 ```
 
-A runnable version lives in [`examples/outbound`](examples/outbound).
+Customers who would rather receive events in their own cloud than at an HTTPS
+URL get a cloud endpoint: an SQS queue, SNS topic, S3 bucket, Pub/Sub topic
+or GCS bucket in their account (`OutboundEndpointTypeAWSSQS`, `…AWSSNS`,
+`…AWSS3`, `…GCPPubSub`, `…GCPGCS`). Deliveries carry the body unchanged, with
+the Standard Webhooks values as message attributes or object metadata.
+Credentials are theirs, write-only and never returned: reads show
+`CredentialsIdentity` (the access key ID or service account email), and an
+update without `Credentials` keeps the stored ones. Custom headers apply to
+webhooks only.
+
+```go
+endpoint, err := api.CreateOutboundEndpoint(&webhookrelay.OutboundEndpointOptions{
+	Consumer: "customer_42",
+	Type:     webhookrelay.OutboundEndpointTypeAWSSQS,
+	Destination: &webhookrelay.OutboundDestination{AWSSQS: &webhookrelay.OutboundAWSSQS{
+		QueueURL: "https://sqs.eu-west-1.amazonaws.com/123456789012/invoices",
+	}},
+	Credentials: &webhookrelay.OutboundEndpointCredentials{AWS: &webhookrelay.OutboundAWSCredentials{
+		AccessKeyID: "AKIA...", SecretAccessKey: "...",
+	}},
+	EventTypes: []string{"invoice.paid"},
+})
+// endpoint.URL is derived from the queue; endpoint.CredentialsIdentity == "AKIA..."
+```
+
+Migrating many customers at once? `StartOutboundImport` creates event types,
+consumers and endpoints (webhooks or cloud destinations, optionally with their
+existing `whsec_` secrets and starting `Paused` for a cutover) in one background
+task of up to 5000 items. The whole import is validated first; a 400 `APIError`
+lists up to 100 refused items in `ImportErrors` (its `Message` gives the total)
+and writes nothing. Items that
+already exist are left unchanged, so re-running an import is safe.
+
+```go
+task, err := api.StartOutboundImport(&webhookrelay.OutboundImportOptions{
+	EventTypes: []webhookrelay.OutboundImportEventType{{Name: "invoice.paid"}},
+	Consumers:  []webhookrelay.OutboundImportConsumer{{ID: "customer_42", Name: "Acme"}},
+	Endpoints: []webhookrelay.OutboundImportEndpoint{{
+		Consumer:   "customer_42",
+		URL:        "https://customer.example/webhooks",
+		EventTypes: []string{"invoice.paid"},
+		Secret:     "whsec_...", // the customer's existing signing secret
+		Paused:     true,        // resume once you stop sending from the old system
+	}},
+})
+var apiErr *webhookrelay.APIError
+if errors.As(err, &apiErr) {
+	fmt.Println(apiErr.Message) // the total, or why the import as a whole was refused
+	for _, item := range apiErr.ImportErrors {
+		fmt.Printf("%s #%d %s: %s\n", item.Kind, item.Index, item.Key, item.Error)
+	}
+}
+if err != nil {
+	return err
+}
+// One import runs at a time: sending the same import again returns the
+// running task, a different one gets a 409. Bound the wait with
+// api.WithContext.
+for !task.Done() {
+	time.Sleep(2 * time.Second)
+	if task, err = api.GetOutboundImport(task.ID); err != nil {
+		return err
+	}
+}
+if task.Status == webhookrelay.OutboundImportStatusFailed {
+	// Errors lists refused items when nothing was written; otherwise Error
+	// names the item that stopped it, and starting it again resumes it.
+	return fmt.Errorf("import %s failed: %s", task.ID, task.Error)
+}
+```
+
+Item keys name endpoints by URL, which may be sensitive, so log them with care.
+A runnable version, the import included (`ImportCustomers`), lives in
+[`examples/outbound`](examples/outbound).
 
 ## More capabilities
 

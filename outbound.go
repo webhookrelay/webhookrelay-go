@@ -95,15 +95,112 @@ const (
 	OutboundEndpointStateDisabled = "disabled"
 )
 
-// OutboundEndpoint is a consumer's HTTPS destination.
+// Outbound endpoint types: an HTTPS webhook, or a queue, topic or bucket in
+// the consumer's own cloud account.
+const (
+	OutboundEndpointTypeWebhook   = "webhook"
+	OutboundEndpointTypeAWSSQS    = "aws_sqs"
+	OutboundEndpointTypeAWSSNS    = "aws_sns"
+	OutboundEndpointTypeAWSS3     = "aws_s3"
+	OutboundEndpointTypeGCPPubSub = "gcp_pubsub"
+	OutboundEndpointTypeGCPGCS    = "gcp_gcs"
+)
+
+// OutboundDestination configures a cloud endpoint. Set exactly the block that
+// matches the endpoint's type; webhooks have none.
+type OutboundDestination struct {
+	AWSSQS    *OutboundAWSSQS    `json:"aws_sqs,omitempty"`
+	AWSSNS    *OutboundAWSSNS    `json:"aws_sns,omitempty"`
+	AWSS3     *OutboundAWSS3     `json:"aws_s3,omitempty"`
+	GCPPubSub *OutboundGCPPubSub `json:"gcp_pubsub,omitempty"`
+	GCPGCS    *OutboundGCPGCS    `json:"gcp_gcs,omitempty"`
+}
+
+// OutboundAWSSQS delivers to an SQS queue.
+type OutboundAWSSQS struct {
+	QueueURL string `json:"queue_url"`
+	// Region defaults to the one in an AWS queue URL.
+	Region string `json:"region,omitempty"`
+	// EndpointURL points at an AWS-compatible service instead of AWS.
+	EndpointURL string `json:"endpoint_url,omitempty"`
+}
+
+// OutboundAWSSNS delivers to an SNS topic.
+type OutboundAWSSNS struct {
+	TopicARN string `json:"topic_arn"`
+	// Region defaults to the one in the topic ARN.
+	Region string `json:"region,omitempty"`
+	// EndpointURL points at an AWS-compatible service instead of AWS.
+	EndpointURL string `json:"endpoint_url,omitempty"`
+}
+
+// OutboundAWSS3 writes each message as an object to an S3 bucket.
+type OutboundAWSS3 struct {
+	Bucket string `json:"bucket"`
+	Region string `json:"region"`
+	// Prefix is prepended to every object name.
+	Prefix string `json:"prefix,omitempty"`
+	// EndpointURL points at an AWS-compatible service (MinIO, Cloudflare R2)
+	// instead of AWS.
+	EndpointURL string `json:"endpoint_url,omitempty"`
+}
+
+// OutboundGCPPubSub delivers to a Pub/Sub topic.
+type OutboundGCPPubSub struct {
+	// Topic is "projects/{project}/topics/{topic}", or a topic ID in the
+	// service account's project.
+	Topic string `json:"topic"`
+}
+
+// OutboundGCPGCS writes each message as an object to a Cloud Storage bucket.
+type OutboundGCPGCS struct {
+	Bucket string `json:"bucket"`
+	// Prefix is prepended to every object name.
+	Prefix string `json:"prefix,omitempty"`
+}
+
+// OutboundEndpointCredentials authenticate a cloud endpoint against the
+// consumer's account. They are write-only: stored encrypted and never
+// returned.
+type OutboundEndpointCredentials struct {
+	AWS *OutboundAWSCredentials `json:"aws,omitempty"`
+	GCP *OutboundGCPCredentials `json:"gcp,omitempty"`
+}
+
+// OutboundAWSCredentials is an AWS access key.
+type OutboundAWSCredentials struct {
+	AccessKeyID     string `json:"access_key_id"`
+	SecretAccessKey string `json:"secret_access_key"`
+}
+
+// OutboundGCPCredentials is a GCP service account key.
+type OutboundGCPCredentials struct {
+	// ServiceAccountKey is the service account's JSON key file.
+	ServiceAccountKey string `json:"service_account_key"`
+}
+
+// OutboundEndpoint is a consumer's destination: an HTTPS URL or a cloud
+// destination.
 type OutboundEndpoint struct {
-	ID          string            `json:"id"`
-	Consumer    string            `json:"consumer"`
-	URL         string            `json:"url"`
-	Description string            `json:"description"`
-	EventTypes  []string          `json:"event_types"`
-	Headers     map[string]string `json:"headers,omitempty"`
-	Rate        int               `json:"rate"`
+	ID       string `json:"id"`
+	Consumer string `json:"consumer"`
+	// Type is an OutboundEndpointType* constant; empty or webhook for HTTPS
+	// endpoints.
+	Type string `json:"type,omitempty"`
+	// URL is the webhook's URL; for a cloud endpoint, the target derived from
+	// its destination.
+	URL string `json:"url"`
+	// Destination is set for cloud endpoints. Their credentials are
+	// write-only and never returned.
+	Destination *OutboundDestination `json:"destination,omitempty"`
+	// CredentialsIdentity names a cloud endpoint's credentials without
+	// revealing them: the AWS access key ID or the GCP service account's
+	// email.
+	CredentialsIdentity string            `json:"credentials_identity,omitempty"`
+	Description         string            `json:"description"`
+	EventTypes          []string          `json:"event_types"`
+	Headers             map[string]string `json:"headers,omitempty"`
+	Rate                int               `json:"rate"`
 	// Timeout is seconds per delivery attempt; 0 means 15.
 	Timeout             int        `json:"timeout"`
 	FunctionID          string     `json:"function_id,omitempty"`
@@ -160,12 +257,27 @@ type OutboundEndpointListOptions struct {
 type OutboundEndpointOptions struct {
 	// Consumer is required when creating an endpoint.
 	Consumer string `json:"-"`
-	// URL is a public HTTPS URL.
+	// Type is an OutboundEndpointType* constant: empty (a webhook) or a
+	// queue, topic or bucket in the consumer's own cloud account.
+	Type string `json:"type,omitempty"`
+	// URL is a webhook's public HTTPS URL. Leave it empty for a cloud
+	// endpoint: its URL is derived from Destination.
 	URL string `json:"url"`
+	// Destination configures a cloud endpoint: exactly the block matching
+	// Type. Webhooks have none.
+	Destination *OutboundDestination `json:"destination,omitempty"`
+	// Credentials authenticate a cloud endpoint: required on create,
+	// write-only, and never returned (reads show CredentialsIdentity). On
+	// update, nil keeps the stored ones; send new ones to replace them, which
+	// the API requires when the type changes cloud or an AWS endpoint_url
+	// changes.
+	Credentials *OutboundEndpointCredentials `json:"credentials,omitempty"`
 	// EventTypes lists the event types to deliver, or []string{"*"} for all.
-	EventTypes  []string          `json:"event_types"`
-	Description string            `json:"description,omitempty"`
-	Headers     map[string]string `json:"headers,omitempty"`
+	EventTypes  []string `json:"event_types"`
+	Description string   `json:"description,omitempty"`
+	// Headers are extra request headers for a webhook; the API refuses them
+	// on cloud endpoints.
+	Headers map[string]string `json:"headers,omitempty"`
 	// Rate is deliveries per second; 0 uses the consumer's rate.
 	Rate int `json:"rate,omitempty"`
 	// Timeout is seconds per attempt, up to 60; 0 means 15.
@@ -372,15 +484,19 @@ func (api *API) GetOutboundEndpoint(id string) (*OutboundEndpoint, error) {
 	return api.outboundEndpoint(http.MethodGet, outboundPath("endpoints", id), nil)
 }
 
-// CreateOutboundEndpoint registers an HTTPS endpoint for options.Consumer. The
-// returned endpoint carries its signing secret; share it with your customer
-// so they can verify deliveries.
+// CreateOutboundEndpoint registers an endpoint for options.Consumer: an HTTPS
+// webhook, or a queue, topic or bucket in the consumer's cloud account (Type,
+// Destination and Credentials). The returned endpoint carries its signing
+// secret; share it with your customer so they can verify deliveries. Cloud
+// deliveries carry the same Standard Webhooks values as message attributes or
+// object metadata.
 func (api *API) CreateOutboundEndpoint(options *OutboundEndpointOptions) (*OutboundEndpoint, error) {
 	return api.outboundEndpoint(http.MethodPost, outboundPath("consumers", options.Consumer, "endpoints"), options)
 }
 
 // UpdateOutboundEndpoint replaces an endpoint's configuration. Its state and
-// signing secrets are kept.
+// signing secrets are kept, and so are a cloud endpoint's credentials unless
+// options.Credentials sends new ones.
 func (api *API) UpdateOutboundEndpoint(id string, options *OutboundEndpointOptions) (*OutboundEndpoint, error) {
 	return api.outboundEndpoint(http.MethodPut, outboundPath("endpoints", id), options)
 }

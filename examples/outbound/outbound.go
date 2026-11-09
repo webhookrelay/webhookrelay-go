@@ -4,7 +4,10 @@
 package outbound
 
 import (
+	"context"
+	"fmt"
 	"os"
+	"time"
 
 	"github.com/webhookrelay/webhookrelay-go"
 )
@@ -61,4 +64,57 @@ func FailingEndpoints(api *webhookrelay.API) ([]*webhookrelay.OutboundEndpoint, 
 		State: webhookrelay.OutboundEndpointStateFailing,
 		Limit: 20,
 	})
+}
+
+// CreateQueueEndpoint delivers a customer's events to their own SQS queue
+// instead of an HTTPS URL. The access key is theirs, scoped to sending to that
+// queue; it is stored encrypted and never returned (the endpoint shows its
+// key ID in CredentialsIdentity).
+func CreateQueueEndpoint(api *webhookrelay.API, queueURL, accessKeyID, secretAccessKey string) (*webhookrelay.OutboundEndpoint, error) {
+	return api.CreateOutboundEndpoint(&webhookrelay.OutboundEndpointOptions{
+		Consumer:    "customer_42",
+		Type:        webhookrelay.OutboundEndpointTypeAWSSQS,
+		Destination: &webhookrelay.OutboundDestination{AWSSQS: &webhookrelay.OutboundAWSSQS{QueueURL: queueURL}},
+		Credentials: &webhookrelay.OutboundEndpointCredentials{AWS: &webhookrelay.OutboundAWSCredentials{
+			AccessKeyID:     accessKeyID,
+			SecretAccessKey: secretAccessKey,
+		}},
+		EventTypes: []string{"invoice.paid"},
+	})
+}
+
+// ImportCustomers migrates customers from another sender in one request and
+// waits for the import to finish, checking every poll until ctx is done. A
+// refused import returns a 400 *webhookrelay.APIError whose ImportErrors list
+// the items to fix (nothing was written then); a failed one returns the task,
+// whose Error and Errors say why, with an error.
+func ImportCustomers(ctx context.Context, api *webhookrelay.API, customerURL string, poll time.Duration) (*webhookrelay.OutboundImportTask, error) {
+	api = api.WithContext(ctx)
+	task, err := api.StartOutboundImport(&webhookrelay.OutboundImportOptions{
+		EventTypes: []webhookrelay.OutboundImportEventType{{Name: "invoice.paid"}},
+		Consumers:  []webhookrelay.OutboundImportConsumer{{ID: "customer_42", Name: "Acme"}},
+		Endpoints: []webhookrelay.OutboundImportEndpoint{{
+			Consumer:   "customer_42",
+			URL:        customerURL,
+			EventTypes: []string{"invoice.paid"},
+			Paused:     true, // resume once you stop sending from the old system
+		}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	for !task.Done() {
+		select {
+		case <-ctx.Done():
+			return task, fmt.Errorf("import %s still %s: %w", task.ID, task.Status, ctx.Err())
+		case <-time.After(poll):
+		}
+		if task, err = api.GetOutboundImport(task.ID); err != nil {
+			return nil, err
+		}
+	}
+	if task.Status != webhookrelay.OutboundImportStatusCompleted {
+		return task, fmt.Errorf("import %s %s: %s", task.ID, task.Status, task.Error)
+	}
+	return task, nil
 }

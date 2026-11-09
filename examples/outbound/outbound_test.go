@@ -1,10 +1,14 @@
 package outbound
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/webhookrelay/webhookrelay-go"
 )
@@ -100,5 +104,132 @@ func TestNewClientReadsTheAPIKeyFromTheEnvironment(t *testing.T) {
 	api, err := NewClient()
 	if err != nil || api.APIToken != "sk-test" {
 		t.Fatalf("NewClient() = %+v, %v", api, err)
+	}
+}
+
+func TestExampleImportsCustomers(t *testing.T) {
+	var requests []string
+	polls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			var body map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body["endpoints"].([]interface{})[0].(map[string]interface{})["paused"] != true {
+				t.Errorf("the example imports paused endpoints, got %v", body)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"id":"import-1","status":"pending"}`))
+			return
+		}
+		polls++
+		status := "running"
+		if polls > 1 {
+			status = "completed"
+		}
+		_, _ = w.Write([]byte(`{"id":"import-1","status":"` + status + `","endpoints":{"total":1,"created":1}}`))
+	}))
+	defer server.Close()
+	api, err := webhookrelay.NewWithAPIKey("sk-test", webhookrelay.WithAPIEndpointURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, err := ImportCustomers(context.Background(), api, "https://customer.example/webhooks", 0)
+	if err != nil {
+		t.Fatalf("ImportCustomers: %v", err)
+	}
+	if task.Status != webhookrelay.OutboundImportStatusCompleted || task.Endpoints.Created != 1 {
+		t.Fatalf("unexpected task %+v", task)
+	}
+	want := "[POST /outbound/imports GET /outbound/imports/import-1 GET /outbound/imports/import-1]"
+	if got := fmt.Sprint(requests); got != want {
+		t.Fatalf("requests = %s, want %s", got, want)
+	}
+}
+
+func TestExampleImportReportsRefusedItems(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"import refused, nothing was written: 1 invalid item(s)","errors":[{"kind":"endpoint","index":0,"key":"customer_42 http://x","error":"url must be a public HTTPS URL"}]}`))
+	}))
+	defer server.Close()
+	api, err := webhookrelay.NewWithAPIKey("sk-test", webhookrelay.WithAPIEndpointURL(server.URL), webhookrelay.WithRetryPolicy(0, 0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, err := ImportCustomers(context.Background(), api, "http://x", 0)
+	var apiErr *webhookrelay.APIError
+	if task != nil || !errors.As(err, &apiErr) || len(apiErr.ImportErrors) != 1 {
+		t.Fatalf("expected a refusal listing one item, got %v, %v", task, err)
+	}
+}
+
+func TestExampleImportReportsAFailedImport(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"import-1","status":"failed","error":"1 invalid item(s)","errors":[{"kind":"endpoint","index":0,"error":"resolves to 10.0.0.5"}]}`))
+	}))
+	defer server.Close()
+	api, err := webhookrelay.NewWithAPIKey("sk-test", webhookrelay.WithAPIEndpointURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, err := ImportCustomers(context.Background(), api, "https://customer.example/webhooks", 0)
+	if err == nil || task == nil || len(task.Errors) != 1 {
+		t.Fatalf("a failed import is an error that keeps the task, got %+v, %v", task, err)
+	}
+}
+
+func TestExampleImportStopsWhenItsContextEnds(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"import-1","status":"running"}`)) // never finishes
+	}))
+	defer server.Close()
+	api, err := webhookrelay.NewWithAPIKey("sk-test", webhookrelay.WithAPIEndpointURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	started := time.Now()
+	_, err = ImportCustomers(ctx, api, "https://customer.example/webhooks", 10*time.Millisecond)
+	// The client's rate limiter may refuse a request that would outlast the
+	// deadline before it arrives, in its own words.
+	if err == nil || time.Since(started) > time.Second {
+		t.Fatalf("expected the import to stop at the context's deadline, got %v after %s", err, time.Since(started))
+	}
+}
+
+func TestExampleCreatesAQueueEndpoint(t *testing.T) {
+	var body map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/outbound/consumers/customer_42/endpoints" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"ep-1","type":"aws_sqs","url":"https://sqs.eu-west-1.amazonaws.com/1/orders","credentials_identity":"AKIAEXAMPLE"}`))
+	}))
+	defer server.Close()
+	api, err := webhookrelay.NewWithAPIKey("sk-test", webhookrelay.WithAPIEndpointURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	endpoint, err := CreateQueueEndpoint(api, "https://sqs.eu-west-1.amazonaws.com/1/orders", "AKIAEXAMPLE", "secret")
+	if err != nil {
+		t.Fatalf("CreateQueueEndpoint: %v", err)
+	}
+	if body["type"] != "aws_sqs" || body["destination"].(map[string]interface{})["aws_sqs"] == nil || body["credentials"] == nil {
+		t.Fatalf("unexpected body %v", body)
+	}
+	if endpoint.CredentialsIdentity != "AKIAEXAMPLE" {
+		t.Fatalf("unexpected endpoint %+v", endpoint)
 	}
 }
