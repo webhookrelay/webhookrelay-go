@@ -302,16 +302,27 @@ task, err := api.StartOutboundImport(&webhookrelay.OutboundImportOptions{
 })
 var apiErr *webhookrelay.APIError
 if errors.As(err, &apiErr) {
+	fmt.Println(apiErr.Message) // the total, or why the import as a whole was refused
 	for _, item := range apiErr.ImportErrors {
 		fmt.Printf("%s #%d %s: %s\n", item.Kind, item.Index, item.Key, item.Error)
 	}
 }
-// Poll until task.Done(). One import runs at a time: sending the same import
-// again returns the running task, a different one gets a 409.
-task, err = api.GetOutboundImport(task.ID)
+if err != nil {
+	return err
+}
+// One import runs at a time: sending the same import again returns the
+// running task, a different one gets a 409.
+for !task.Done() {
+	time.Sleep(2 * time.Second)
+	if task, err = api.GetOutboundImport(task.ID); err != nil {
+		return err
+	}
+}
 ```
 
-A runnable version lives in [`examples/outbound`](examples/outbound).
+Item keys name endpoints by URL, which may be sensitive, so log them with care.
+A runnable version, the import included (`ImportCustomers`), lives in
+[`examples/outbound`](examples/outbound).
 
 ## More capabilities
 

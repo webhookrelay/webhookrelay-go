@@ -5,6 +5,7 @@ package outbound
 
 import (
 	"os"
+	"time"
 
 	"github.com/webhookrelay/webhookrelay-go"
 )
@@ -61,4 +62,31 @@ func FailingEndpoints(api *webhookrelay.API) ([]*webhookrelay.OutboundEndpoint, 
 		State: webhookrelay.OutboundEndpointStateFailing,
 		Limit: 20,
 	})
+}
+
+// ImportCustomers migrates customers from another sender in one request and
+// waits for the import to finish, checking every poll. A refused import
+// returns a 400 *webhookrelay.APIError whose ImportErrors list the items to
+// fix; nothing was written then. Bound a large import with api.WithContext.
+func ImportCustomers(api *webhookrelay.API, customerURL string, poll time.Duration) (*webhookrelay.OutboundImport, error) {
+	task, err := api.StartOutboundImport(&webhookrelay.OutboundImportOptions{
+		EventTypes: []webhookrelay.OutboundImportEventType{{Name: "invoice.paid"}},
+		Consumers:  []webhookrelay.OutboundImportConsumer{{ID: "customer_42", Name: "Acme"}},
+		Endpoints: []webhookrelay.OutboundImportEndpoint{{
+			Consumer:   "customer_42",
+			URL:        customerURL,
+			EventTypes: []string{"invoice.paid"},
+			Paused:     true, // resume once you stop sending from the old system
+		}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	for !task.Done() {
+		time.Sleep(poll)
+		if task, err = api.GetOutboundImport(task.ID); err != nil {
+			return nil, err
+		}
+	}
+	return task, nil
 }

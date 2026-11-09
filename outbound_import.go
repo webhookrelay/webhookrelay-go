@@ -104,7 +104,8 @@ type OutboundImportItemError struct {
 	Index int `json:"index"`
 	// Key names the item: event type name, consumer ID, or an endpoint's
 	// consumer and URL. For a limit it names the list (event_types,
-	// consumers) or the consumer. Secrets and credentials are never included.
+	// consumers) or the consumer. Signing secrets and cloud credentials are
+	// never included, but an endpoint's URL may itself be sensitive.
 	Key   string `json:"key,omitempty"`
 	Error string `json:"error"`
 }
@@ -153,25 +154,30 @@ type OutboundImport struct {
 }
 
 // Done reports whether the import has finished. Any status but pending,
-// validating and running is final, including ones added after this release.
+// validating and running is final, including ones added after this release;
+// a task without a status is not.
 func (i *OutboundImport) Done() bool {
 	switch i.Status {
-	case OutboundImportStatusPending, OutboundImportStatusValidating, OutboundImportStatusRunning:
+	case "", OutboundImportStatusPending, OutboundImportStatusValidating, OutboundImportStatusRunning:
 		return false
 	}
 	return true
 }
 
 // StartOutboundImport validates the import and starts it in the background;
-// poll GetOutboundImport until it is Done. Up to OutboundMaxImportItems items
-// per import, one import at a time per account.
+// poll GetOutboundImport every few seconds until it is Done
+// (examples/outbound ImportCustomers shows the whole flow). Up to
+// OutboundMaxImportItems items per import, one import at a time per account.
 //
 // Invalid items refuse the whole import with a 400 APIError whose
 // ImportErrors list up to 100 of them (nothing is written; Message gives the
-// total). Sending the same import again while it runs returns the running
-// task, so the client's automatic retries are safe; a different import
-// answers 409 (IsConflict) until it finishes, and a body over
-// OutboundMaxImportBytes answers 413. A large import can take a while to
+// total). An empty or oversized import is refused with Message alone. For a
+// 400, err.Error() is the raw body, item keys and their endpoint URLs
+// included. Sending the same import again while it runs returns the running
+// task, so the client's automatic retries are safe; if it already finished, a
+// retry starts a new import that finds every item unchanged. A different
+// import answers 409 (IsConflict) until the running one finishes, and a body
+// over OutboundMaxImportBytes answers 413. A large import can take a while to
 // upload and validate: bound it with WithContext.
 func (api *API) StartOutboundImport(options *OutboundImportOptions) (*OutboundImport, error) {
 	if options == nil {

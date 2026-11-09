@@ -2,6 +2,8 @@ package outbound
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -100,5 +102,65 @@ func TestNewClientReadsTheAPIKeyFromTheEnvironment(t *testing.T) {
 	api, err := NewClient()
 	if err != nil || api.APIToken != "sk-test" {
 		t.Fatalf("NewClient() = %+v, %v", api, err)
+	}
+}
+
+func TestExampleImportsCustomers(t *testing.T) {
+	var requests []string
+	polls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			var body map[string]interface{}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body["endpoints"].([]interface{})[0].(map[string]interface{})["paused"] != true {
+				t.Errorf("the example imports paused endpoints, got %v", body)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"id":"import-1","status":"pending"}`))
+			return
+		}
+		polls++
+		status := "running"
+		if polls > 1 {
+			status = "completed"
+		}
+		_, _ = w.Write([]byte(`{"id":"import-1","status":"` + status + `","endpoints":{"total":1,"created":1}}`))
+	}))
+	defer server.Close()
+	api, err := webhookrelay.NewWithAPIKey("sk-test", webhookrelay.WithAPIEndpointURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, err := ImportCustomers(api, "https://customer.example/webhooks", 0)
+	if err != nil {
+		t.Fatalf("ImportCustomers: %v", err)
+	}
+	if task.Status != webhookrelay.OutboundImportStatusCompleted || task.Endpoints.Created != 1 {
+		t.Fatalf("unexpected task %+v", task)
+	}
+	want := "[POST /outbound/imports GET /outbound/imports/import-1 GET /outbound/imports/import-1]"
+	if got := fmt.Sprint(requests); got != want {
+		t.Fatalf("requests = %s, want %s", got, want)
+	}
+}
+
+func TestExampleImportReportsRefusedItems(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"import refused, nothing was written: 1 invalid item(s)","errors":[{"kind":"endpoint","index":0,"key":"customer_42 http://x","error":"url must be a public HTTPS URL"}]}`))
+	}))
+	defer server.Close()
+	api, err := webhookrelay.NewWithAPIKey("sk-test", webhookrelay.WithAPIEndpointURL(server.URL), webhookrelay.WithRetryPolicy(0, 0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	task, err := ImportCustomers(api, "http://x", 0)
+	var apiErr *webhookrelay.APIError
+	if task != nil || !errors.As(err, &apiErr) || len(apiErr.ImportErrors) != 1 {
+		t.Fatalf("expected a refusal listing one item, got %v, %v", task, err)
 	}
 }

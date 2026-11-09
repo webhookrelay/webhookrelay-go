@@ -40,10 +40,11 @@ type APIError struct {
 	// RetryAfter is the delay the server asked for in its Retry-After header
 	// (usually on 429 and 503), zero when absent.
 	RetryAfter time.Duration
-	// ImportErrors are the per-item errors of a refused bulk import (a 400
-	// from StartOutboundImport): up to 100 of them, sorted by kind and
-	// position (Message gives the total). Nil when the body lists none, or
-	// lists errors of another shape.
+	// ImportErrors are the per-item errors of a refused bulk import: set
+	// when the body's "errors" list has the OutboundImportItemError shape,
+	// which today only a 400 from StartOutboundImport has. Up to 100 items,
+	// sorted by kind and position (Message gives the total). Nil when the
+	// body lists none, or lists errors of another shape.
 	ImportErrors []OutboundImportItemError
 }
 
@@ -84,25 +85,37 @@ func newAPIError(status int, header http.Header, body []byte) *APIError {
 	if json.Unmarshal(body, &payload) == nil {
 		apiErr.Message = payload.Error
 		// Other endpoints may shape "errors" differently; keep Message then.
-		var items []OutboundImportItemError
-		if json.Unmarshal(payload.Errors, &items) == nil && len(items) > 0 && allImportItemErrors(items) {
+		if items, ok := importItemErrors(payload.Errors); ok {
 			apiErr.ImportErrors = items
 		}
 	}
 	return apiErr
 }
 
-// allImportItemErrors reports whether every item has a kind and an error.
-// Objects of another shape decode without error but leave both empty. The
+// importItemErrors decodes an "errors" list of import item errors. It
+// refuses an empty list and any item without a kind, a position or an error:
+// objects of another shape decode without error but leave those empty. The
 // kind is not checked against the known ones, so kinds the API adds later
 // still reach older clients.
-func allImportItemErrors(items []OutboundImportItemError) bool {
-	for _, item := range items {
-		if item.Kind == "" || item.Error == "" {
-			return false
+func importItemErrors(raw json.RawMessage) ([]OutboundImportItemError, bool) {
+	var shapes []struct {
+		Kind  string `json:"kind"`
+		Index *int   `json:"index"`
+		Error string `json:"error"`
+	}
+	if json.Unmarshal(raw, &shapes) != nil || len(shapes) == 0 {
+		return nil, false
+	}
+	for _, item := range shapes {
+		if item.Kind == "" || item.Index == nil || item.Error == "" {
+			return nil, false
 		}
 	}
-	return true
+	var items []OutboundImportItemError
+	if json.Unmarshal(raw, &items) != nil {
+		return nil, false
+	}
+	return items, true
 }
 
 // IsNotFound reports whether err is an APIError with status 404.

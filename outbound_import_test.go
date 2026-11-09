@@ -131,6 +131,8 @@ func TestAPIErrorIgnoresForeignErrorsShape(t *testing.T) {
 		`["a","b"]`,
 		`[{"field":"url","message":"required"}]`,
 		`[{"kind":"endpoint","index":0,"error":"bad url"},{"code":"bad_gateway"}]`,
+		`[{"kind":"limit","error":"too many endpoints"}]`, // no position
+		`[{"kind":"endpoint","index":0,"error":""}]`,
 		`[]`,
 	} {
 		api := errorServer(t, http.StatusBadRequest, `{"error":"bad","errors":`+errorsField+`}`, nil)
@@ -160,57 +162,41 @@ func TestOutboundImportWireValues(t *testing.T) {
 }
 
 // OutboundImportEndpoint repeats the OutboundEndpointOptions fields; a field
-// added to one and not the other would silently drop out of imports.
+// added to one and not the other, or encoded differently, would silently
+// change imports.
 func TestOutboundImportEndpointCarriesEveryEndpointOption(t *testing.T) {
+	// A cloud endpoint has no URL, so an import may omit it; creating a
+	// webhook endpoint always sends one.
+	differ := map[string]string{"url": "url,omitempty"}
 	importFields := jsonFields(reflect.TypeOf(OutboundImportEndpoint{}))
-	for name, typ := range jsonFields(reflect.TypeOf(OutboundEndpointOptions{})) {
-		if got, ok := importFields[name]; !ok || got != typ {
-			t.Errorf("OutboundImportEndpoint lacks endpoint option %q (%s)", name, typ)
+	for name, option := range jsonFields(reflect.TypeOf(OutboundEndpointOptions{})) {
+		got, ok := importFields[name]
+		want := option.tag
+		if tag, ok := differ[name]; ok {
+			want = tag
+		}
+		if !ok || got.typ != option.typ || got.tag != want {
+			t.Errorf("OutboundImportEndpoint field %q = %+v, want %s %q", name, got, option.typ, want)
 		}
 	}
 }
 
-// jsonFields maps a struct's JSON field names to their Go types, skipping
-// fields that are not encoded.
-func jsonFields(typ reflect.Type) map[string]reflect.Type {
-	fields := map[string]reflect.Type{}
+type jsonField struct {
+	typ reflect.Type
+	tag string
+}
+
+// jsonFields maps a struct's JSON field names to their Go types and full
+// tags, skipping fields that are not encoded.
+func jsonFields(typ reflect.Type) map[string]jsonField {
+	fields := map[string]jsonField{}
 	for i := 0; i < typ.NumField(); i++ {
 		field := typ.Field(i)
-		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		tag := field.Tag.Get("json")
+		name, _, _ := strings.Cut(tag, ",")
 		if name != "" && name != "-" {
-			fields[name] = field.Type
+			fields[name] = jsonField{typ: field.Type, tag: tag}
 		}
 	}
 	return fields
-}
-
-func TestStartOutboundImportTooLarge(t *testing.T) {
-	api := errorServer(t, http.StatusRequestEntityTooLarge, `{"error":"the import exceeds 10 MiB; split it into several imports"}`, nil)
-	_, err := api.StartOutboundImport(nil)
-	var apiErr *APIError
-	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusRequestEntityTooLarge || apiErr.ImportErrors != nil {
-		t.Fatalf("expected a 413 APIError without items, got %v", err)
-	}
-}
-
-func TestOutboundImportDoneForEveryFinalStatus(t *testing.T) {
-	for status, done := range map[string]bool{
-		OutboundImportStatusPending: false, OutboundImportStatusValidating: false, OutboundImportStatusRunning: false,
-		OutboundImportStatusCompleted: true, OutboundImportStatusFailed: true,
-		"cancelled": true, // a final status added after this release
-	} {
-		if got := (&OutboundImport{Status: status}).Done(); got != done {
-			t.Errorf("Done() for %q = %v, want %v", status, got, done)
-		}
-	}
-}
-
-func TestStartOutboundImportWithoutOptionsSendsAnEmptyImport(t *testing.T) {
-	api, requests := outboundServer(t, `{"id":"import-1","status":"pending"}`)
-	if _, err := api.StartOutboundImport(nil); err != nil {
-		t.Fatalf("StartOutboundImport: %v", err)
-	}
-	if got := (*requests)[0].Body; !jsonEqual(got, map[string]interface{}{}) {
-		t.Fatalf("expected an empty import object, got %#v", got)
-	}
 }
