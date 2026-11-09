@@ -20,90 +20,6 @@ const (
 	OutboundMaxImportBytes = 10 << 20
 )
 
-// Outbound endpoint types: an HTTPS webhook, or a queue, topic or bucket in
-// the consumer's own cloud account.
-const (
-	OutboundEndpointTypeWebhook   = "webhook"
-	OutboundEndpointTypeAWSSQS    = "aws_sqs"
-	OutboundEndpointTypeAWSSNS    = "aws_sns"
-	OutboundEndpointTypeAWSS3     = "aws_s3"
-	OutboundEndpointTypeGCPPubSub = "gcp_pubsub"
-	OutboundEndpointTypeGCPGCS    = "gcp_gcs"
-)
-
-// OutboundDestination configures a cloud endpoint. Set exactly the block that
-// matches the endpoint's type; webhooks have none.
-type OutboundDestination struct {
-	AWSSQS    *OutboundAWSSQS    `json:"aws_sqs,omitempty"`
-	AWSSNS    *OutboundAWSSNS    `json:"aws_sns,omitempty"`
-	AWSS3     *OutboundAWSS3     `json:"aws_s3,omitempty"`
-	GCPPubSub *OutboundGCPPubSub `json:"gcp_pubsub,omitempty"`
-	GCPGCS    *OutboundGCPGCS    `json:"gcp_gcs,omitempty"`
-}
-
-// OutboundAWSSQS delivers to an SQS queue.
-type OutboundAWSSQS struct {
-	QueueURL string `json:"queue_url"`
-	// Region defaults to the one in an AWS queue URL.
-	Region string `json:"region,omitempty"`
-	// EndpointURL points at an AWS-compatible service instead of AWS.
-	EndpointURL string `json:"endpoint_url,omitempty"`
-}
-
-// OutboundAWSSNS delivers to an SNS topic.
-type OutboundAWSSNS struct {
-	TopicARN string `json:"topic_arn"`
-	// Region defaults to the one in the topic ARN.
-	Region string `json:"region,omitempty"`
-	// EndpointURL points at an AWS-compatible service instead of AWS.
-	EndpointURL string `json:"endpoint_url,omitempty"`
-}
-
-// OutboundAWSS3 writes each message as an object to an S3 bucket.
-type OutboundAWSS3 struct {
-	Bucket string `json:"bucket"`
-	Region string `json:"region"`
-	// Prefix is prepended to every object name.
-	Prefix string `json:"prefix,omitempty"`
-	// EndpointURL points at an AWS-compatible service (MinIO, Cloudflare R2)
-	// instead of AWS.
-	EndpointURL string `json:"endpoint_url,omitempty"`
-}
-
-// OutboundGCPPubSub delivers to a Pub/Sub topic.
-type OutboundGCPPubSub struct {
-	// Topic is "projects/{project}/topics/{topic}", or a topic ID in the
-	// service account's project.
-	Topic string `json:"topic"`
-}
-
-// OutboundGCPGCS writes each message as an object to a Cloud Storage bucket.
-type OutboundGCPGCS struct {
-	Bucket string `json:"bucket"`
-	// Prefix is prepended to every object name.
-	Prefix string `json:"prefix,omitempty"`
-}
-
-// OutboundEndpointCredentials authenticate a cloud endpoint against the
-// consumer's account. They are write-only: stored encrypted and never
-// returned.
-type OutboundEndpointCredentials struct {
-	AWS *OutboundAWSCredentials `json:"aws,omitempty"`
-	GCP *OutboundGCPCredentials `json:"gcp,omitempty"`
-}
-
-// OutboundAWSCredentials is an AWS access key.
-type OutboundAWSCredentials struct {
-	AccessKeyID     string `json:"access_key_id"`
-	SecretAccessKey string `json:"secret_access_key"`
-}
-
-// OutboundGCPCredentials is a GCP service account key.
-type OutboundGCPCredentials struct {
-	// ServiceAccountKey is the service account's JSON key file.
-	ServiceAccountKey string `json:"service_account_key"`
-}
-
 // OutboundImportOptions is a bulk import. Event types are created first, then
 // consumers, then endpoints, so endpoints may name consumers and event types
 // created by the same import.
@@ -241,9 +157,13 @@ func (i *OutboundImport) Done() bool {
 // poll GetOutboundImport until it is Done. Up to OutboundMaxImportItems items
 // per import, one import at a time per account.
 //
-// Invalid items refuse the whole import with a 400 APIError whose ImportErrors
-// list each item (nothing is written); another running import answers 409
-// (IsConflict) and a body over OutboundMaxImportBytes answers 413.
+// Invalid items refuse the whole import with a 400 APIError whose
+// ImportErrors list up to 100 of them (nothing is written; Message gives the
+// total). Sending the same import again while it runs returns the running
+// task, so the client's automatic retries are safe; a different import
+// answers 409 (IsConflict) until it finishes, and a body over
+// OutboundMaxImportBytes answers 413. A large import can take a while to
+// upload and validate: bound it with WithContext.
 func (api *API) StartOutboundImport(options *OutboundImportOptions) (*OutboundImport, error) {
 	var task OutboundImport
 	if err := api.outbound(http.MethodPost, outboundPath("imports"), options, &task, nil); err != nil {

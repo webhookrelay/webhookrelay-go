@@ -41,7 +41,9 @@ type APIError struct {
 	// (usually on 429 and 503), zero when absent.
 	RetryAfter time.Duration
 	// ImportErrors are the "errors" field of a 400 from StartOutboundImport:
-	// every refused item, so all of them can be fixed before retrying.
+	// up to 100 of the refused items, sorted by kind and position (Message
+	// gives the total). Nil when the body has no such list, or one of another
+	// shape.
 	ImportErrors []OutboundImportItemError
 }
 
@@ -82,11 +84,28 @@ func newAPIError(status int, header http.Header, body []byte) *APIError {
 	if json.Unmarshal(body, &payload) == nil {
 		apiErr.Message = payload.Error
 		// Other endpoints may shape "errors" differently; keep Message then.
-		if len(payload.Errors) > 0 && json.Unmarshal(payload.Errors, &apiErr.ImportErrors) != nil {
-			apiErr.ImportErrors = nil
+		var items []OutboundImportItemError
+		if len(payload.Errors) > 0 && json.Unmarshal(payload.Errors, &items) == nil && allImportItemErrors(items) {
+			apiErr.ImportErrors = items
 		}
 	}
 	return apiErr
+}
+
+// allImportItemErrors reports whether every item names a known kind and an
+// error: objects of another shape decode without error but leave both empty.
+func allImportItemErrors(items []OutboundImportItemError) bool {
+	for _, item := range items {
+		switch item.Kind {
+		case OutboundImportItemEventType, OutboundImportItemConsumer, OutboundImportItemEndpoint, OutboundImportItemLimit:
+		default:
+			return false
+		}
+		if item.Error == "" {
+			return false
+		}
+	}
+	return true
 }
 
 // IsNotFound reports whether err is an APIError with status 404.

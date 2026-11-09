@@ -284,7 +284,8 @@ Migrating many customers at once? `StartOutboundImport` creates event types,
 consumers and endpoints (webhooks or cloud destinations, optionally with their
 existing `whsec_` secrets and starting `Paused` for a cutover) in one background
 task of up to 5000 items. The whole import is validated first; a 400 `APIError`
-lists every refused item in `ImportErrors` and writes nothing. Items that
+lists up to 100 refused items in `ImportErrors` (its `Message` gives the total)
+and writes nothing. Items that
 already exist are left unchanged, so re-running an import is safe.
 
 ```go
@@ -305,7 +306,8 @@ if errors.As(err, &apiErr) {
 		fmt.Printf("%s #%d %s: %s\n", item.Kind, item.Index, item.Key, item.Error)
 	}
 }
-// Poll until task.Done(); one import runs at a time (409 otherwise).
+// Poll until task.Done(). One import runs at a time: sending the same import
+// again returns the running task, a different one gets a 409.
 task, err = api.GetOutboundImport(task.ID)
 ```
 

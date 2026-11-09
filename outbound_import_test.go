@@ -3,6 +3,8 @@ package webhookrelay
 import (
 	"errors"
 	"net/http"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -117,10 +119,57 @@ func TestStartOutboundImportConflict(t *testing.T) {
 	}
 }
 
-// An "errors" field of another shape must not hide the message.
+// An "errors" field of another shape must neither hide the message nor pass
+// as import items: strings fail to decode, objects decode with empty fields.
 func TestAPIErrorIgnoresForeignErrorsShape(t *testing.T) {
-	err := newAPIError(http.StatusBadRequest, http.Header{}, []byte(`{"error":"bad","errors":["a","b"]}`))
-	if err.Message != "bad" || err.ImportErrors != nil {
-		t.Fatalf("unexpected error: %+v", err)
+	for _, errorsField := range []string{`["a","b"]`, `[{"field":"url","message":"required"}]`} {
+		api := errorServer(t, http.StatusBadRequest, `{"error":"bad","errors":`+errorsField+`}`, nil)
+		_, err := api.StartOutboundImport(&OutboundImportOptions{})
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.Message != "bad" || apiErr.ImportErrors != nil {
+			t.Fatalf("errors %s: unexpected error %+v", errorsField, err)
+		}
 	}
+}
+
+// The wire values callers filter on are the server's.
+func TestOutboundImportWireValues(t *testing.T) {
+	got := []string{
+		OutboundImportItemEventType, OutboundImportItemConsumer, OutboundImportItemEndpoint, OutboundImportItemLimit,
+		OutboundImportStatusPending, OutboundImportStatusValidating, OutboundImportStatusRunning, OutboundImportStatusCompleted, OutboundImportStatusFailed,
+		OutboundEndpointTypeWebhook, OutboundEndpointTypeAWSSQS, OutboundEndpointTypeAWSSNS, OutboundEndpointTypeAWSS3, OutboundEndpointTypeGCPPubSub, OutboundEndpointTypeGCPGCS,
+	}
+	want := []string{
+		"event_type", "consumer", "endpoint", "limit",
+		"pending", "validating", "running", "completed", "failed",
+		"webhook", "aws_sqs", "aws_sns", "aws_s3", "gcp_pubsub", "gcp_gcs",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("wire values changed:\n got %q\nwant %q", got, want)
+	}
+}
+
+// OutboundImportEndpoint repeats the OutboundEndpointOptions fields; a field
+// added to one and not the other would silently drop out of imports.
+func TestOutboundImportEndpointCarriesEveryEndpointOption(t *testing.T) {
+	importFields := jsonFields(reflect.TypeOf(OutboundImportEndpoint{}))
+	for name, typ := range jsonFields(reflect.TypeOf(OutboundEndpointOptions{})) {
+		if got, ok := importFields[name]; !ok || got != typ {
+			t.Errorf("OutboundImportEndpoint lacks endpoint option %q (%s)", name, typ)
+		}
+	}
+}
+
+// jsonFields maps a struct's JSON field names to their Go types, skipping
+// fields that are not encoded.
+func jsonFields(typ reflect.Type) map[string]reflect.Type {
+	fields := map[string]reflect.Type{}
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		name, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+		if name != "" && name != "-" {
+			fields[name] = field.Type
+		}
+	}
+	return fields
 }
