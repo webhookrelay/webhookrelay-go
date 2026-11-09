@@ -94,19 +94,23 @@ func TestGetOutboundImportFailedWithItemErrors(t *testing.T) {
 }
 
 func TestStartOutboundImportItemErrors(t *testing.T) {
-	api := errorServer(t, http.StatusBadRequest, `{"error":"2 import items are invalid","errors":[
+	api := errorServer(t, http.StatusBadRequest, `{"error":"4 import items are invalid","errors":[
+		{"kind":"event_type","index":0,"key":"invoice.paid","error":"listed twice"},
 		{"kind":"consumer","index":1,"key":"cust_7","error":"id is required"},
-		{"kind":"limit","index":-1,"error":"too many items"}]}`, nil)
+		{"kind":"function","index":0,"error":"a kind the API added later"},
+		{"kind":"limit","index":-1,"key":"consumers","error":"too many items"}]}`, nil)
 	_, err := api.StartOutboundImport(&OutboundImportOptions{})
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) || !IsBadRequest(err) {
 		t.Fatalf("expected a 400 APIError, got %v", err)
 	}
 	want := []OutboundImportItemError{
+		{Kind: OutboundImportItemEventType, Index: 0, Key: "invoice.paid", Error: "listed twice"},
 		{Kind: OutboundImportItemConsumer, Index: 1, Key: "cust_7", Error: "id is required"},
-		{Kind: OutboundImportItemLimit, Index: -1, Error: "too many items"},
+		{Kind: "function", Index: 0, Error: "a kind the API added later"},
+		{Kind: OutboundImportItemLimit, Index: -1, Key: "consumers", Error: "too many items"},
 	}
-	if apiErr.Message != "2 import items are invalid" || !jsonEqual(apiErr.ImportErrors, want) {
+	if apiErr.Message != "4 import items are invalid" || !jsonEqual(apiErr.ImportErrors, want) {
 		t.Fatalf("unexpected error: %+v", apiErr)
 	}
 }
@@ -120,9 +124,15 @@ func TestStartOutboundImportConflict(t *testing.T) {
 }
 
 // An "errors" field of another shape must neither hide the message nor pass
-// as import items: strings fail to decode, objects decode with empty fields.
+// as import items: strings fail to decode, objects decode with empty fields,
+// and one such item refuses the whole list. An empty list is no list.
 func TestAPIErrorIgnoresForeignErrorsShape(t *testing.T) {
-	for _, errorsField := range []string{`["a","b"]`, `[{"field":"url","message":"required"}]`} {
+	for _, errorsField := range []string{
+		`["a","b"]`,
+		`[{"field":"url","message":"required"}]`,
+		`[{"kind":"endpoint","index":0,"error":"bad url"},{"code":"bad_gateway"}]`,
+		`[]`,
+	} {
 		api := errorServer(t, http.StatusBadRequest, `{"error":"bad","errors":`+errorsField+`}`, nil)
 		_, err := api.StartOutboundImport(&OutboundImportOptions{})
 		var apiErr *APIError
@@ -172,4 +182,35 @@ func jsonFields(typ reflect.Type) map[string]reflect.Type {
 		}
 	}
 	return fields
+}
+
+func TestStartOutboundImportTooLarge(t *testing.T) {
+	api := errorServer(t, http.StatusRequestEntityTooLarge, `{"error":"the import exceeds 10 MiB; split it into several imports"}`, nil)
+	_, err := api.StartOutboundImport(nil)
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusRequestEntityTooLarge || apiErr.ImportErrors != nil {
+		t.Fatalf("expected a 413 APIError without items, got %v", err)
+	}
+}
+
+func TestOutboundImportDoneForEveryFinalStatus(t *testing.T) {
+	for status, done := range map[string]bool{
+		OutboundImportStatusPending: false, OutboundImportStatusValidating: false, OutboundImportStatusRunning: false,
+		OutboundImportStatusCompleted: true, OutboundImportStatusFailed: true,
+		"cancelled": true, // a final status added after this release
+	} {
+		if got := (&OutboundImport{Status: status}).Done(); got != done {
+			t.Errorf("Done() for %q = %v, want %v", status, got, done)
+		}
+	}
+}
+
+func TestStartOutboundImportWithoutOptionsSendsAnEmptyImport(t *testing.T) {
+	api, requests := outboundServer(t, `{"id":"import-1","status":"pending"}`)
+	if _, err := api.StartOutboundImport(nil); err != nil {
+		t.Fatalf("StartOutboundImport: %v", err)
+	}
+	if got := (*requests)[0].Body; !jsonEqual(got, map[string]interface{}{}) {
+		t.Fatalf("expected an empty import object, got %#v", got)
+	}
 }

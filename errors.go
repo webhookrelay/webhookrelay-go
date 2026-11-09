@@ -40,10 +40,10 @@ type APIError struct {
 	// RetryAfter is the delay the server asked for in its Retry-After header
 	// (usually on 429 and 503), zero when absent.
 	RetryAfter time.Duration
-	// ImportErrors are the "errors" field of a 400 from StartOutboundImport:
-	// up to 100 of the refused items, sorted by kind and position (Message
-	// gives the total). Nil when the body has no such list, or one of another
-	// shape.
+	// ImportErrors are the per-item errors of a refused bulk import (a 400
+	// from StartOutboundImport): up to 100 of them, sorted by kind and
+	// position (Message gives the total). Nil when the body lists none, or
+	// lists errors of another shape.
 	ImportErrors []OutboundImportItemError
 }
 
@@ -85,23 +85,20 @@ func newAPIError(status int, header http.Header, body []byte) *APIError {
 		apiErr.Message = payload.Error
 		// Other endpoints may shape "errors" differently; keep Message then.
 		var items []OutboundImportItemError
-		if len(payload.Errors) > 0 && json.Unmarshal(payload.Errors, &items) == nil && allImportItemErrors(items) {
+		if json.Unmarshal(payload.Errors, &items) == nil && len(items) > 0 && allImportItemErrors(items) {
 			apiErr.ImportErrors = items
 		}
 	}
 	return apiErr
 }
 
-// allImportItemErrors reports whether every item names a known kind and an
-// error: objects of another shape decode without error but leave both empty.
+// allImportItemErrors reports whether every item has a kind and an error.
+// Objects of another shape decode without error but leave both empty. The
+// kind is not checked against the known ones, so kinds the API adds later
+// still reach older clients.
 func allImportItemErrors(items []OutboundImportItemError) bool {
 	for _, item := range items {
-		switch item.Kind {
-		case OutboundImportItemEventType, OutboundImportItemConsumer, OutboundImportItemEndpoint, OutboundImportItemLimit:
-		default:
-			return false
-		}
-		if item.Error == "" {
+		if item.Kind == "" || item.Error == "" {
 			return false
 		}
 	}

@@ -14,6 +14,8 @@ import (
 const (
 	// OutboundMaxImportItems caps the event types, consumers and endpoints one
 	// import carries together. Split larger migrations into several imports.
+	// Both caps mirror the API's limits at this release; the API's 400 and
+	// 413 answers are authoritative.
 	OutboundMaxImportItems = 5000
 	// OutboundMaxImportBytes caps an import's request body; larger bodies are
 	// refused with a 413 APIError.
@@ -95,12 +97,14 @@ const (
 // OutboundImportItemError is why one item, or the import as a whole, was
 // refused.
 type OutboundImportItemError struct {
-	// Kind is an OutboundImportItem* constant naming the item's list.
+	// Kind is an OutboundImportItem* constant naming the item's list, or a
+	// kind the API added after this release.
 	Kind string `json:"kind"`
 	// Index is the item's position in its list; -1 for a limit.
 	Index int `json:"index"`
 	// Key names the item: event type name, consumer ID, or an endpoint's
-	// consumer and URL. Secrets and credentials are never included.
+	// consumer and URL. For a limit it names the list (event_types,
+	// consumers) or the consumer. Secrets and credentials are never included.
 	Key   string `json:"key,omitempty"`
 	Error string `json:"error"`
 }
@@ -148,9 +152,14 @@ type OutboundImport struct {
 	CompletedAt *time.Time                `json:"completed_at,omitempty"`
 }
 
-// Done reports whether the import has finished, completed or failed.
+// Done reports whether the import has finished. Any status but pending,
+// validating and running is final, including ones added after this release.
 func (i *OutboundImport) Done() bool {
-	return i.Status == OutboundImportStatusCompleted || i.Status == OutboundImportStatusFailed
+	switch i.Status {
+	case OutboundImportStatusPending, OutboundImportStatusValidating, OutboundImportStatusRunning:
+		return false
+	}
+	return true
 }
 
 // StartOutboundImport validates the import and starts it in the background;
@@ -165,6 +174,9 @@ func (i *OutboundImport) Done() bool {
 // OutboundMaxImportBytes answers 413. A large import can take a while to
 // upload and validate: bound it with WithContext.
 func (api *API) StartOutboundImport(options *OutboundImportOptions) (*OutboundImport, error) {
+	if options == nil {
+		options = &OutboundImportOptions{}
+	}
 	var task OutboundImport
 	if err := api.outbound(http.MethodPost, outboundPath("imports"), options, &task, nil); err != nil {
 		return nil, err
