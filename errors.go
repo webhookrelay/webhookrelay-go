@@ -40,6 +40,9 @@ type APIError struct {
 	// RetryAfter is the delay the server asked for in its Retry-After header
 	// (usually on 429 and 503), zero when absent.
 	RetryAfter time.Duration
+	// ImportErrors are the "errors" field of a 400 from StartOutboundImport:
+	// every refused item, so all of them can be fixed before retrying.
+	ImportErrors []OutboundImportItemError
 }
 
 // Error keeps the text of earlier releases, which callers match on: fixed
@@ -73,10 +76,15 @@ func newAPIError(status int, header http.Header, body []byte) *APIError {
 		apiErr.RetryAfter = wait
 	}
 	var payload struct {
-		Error string `json:"error"`
+		Error  string          `json:"error"`
+		Errors json.RawMessage `json:"errors"`
 	}
 	if json.Unmarshal(body, &payload) == nil {
 		apiErr.Message = payload.Error
+		// Other endpoints may shape "errors" differently; keep Message then.
+		if len(payload.Errors) > 0 && json.Unmarshal(payload.Errors, &apiErr.ImportErrors) != nil {
+			apiErr.ImportErrors = nil
+		}
 	}
 	return apiErr
 }

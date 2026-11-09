@@ -280,6 +280,35 @@ failing, err := api.ListAllOutboundEndpoints(&webhookrelay.OutboundEndpointListO
 })
 ```
 
+Migrating many customers at once? `StartOutboundImport` creates event types,
+consumers and endpoints (webhooks or cloud destinations, optionally with their
+existing `whsec_` secrets and starting `Paused` for a cutover) in one background
+task of up to 5000 items. The whole import is validated first; a 400 `APIError`
+lists every refused item in `ImportErrors` and writes nothing. Items that
+already exist are left unchanged, so re-running an import is safe.
+
+```go
+task, err := api.StartOutboundImport(&webhookrelay.OutboundImportOptions{
+	EventTypes: []webhookrelay.OutboundImportEventType{{Name: "invoice.paid"}},
+	Consumers:  []webhookrelay.OutboundImportConsumer{{ID: "customer_42", Name: "Acme"}},
+	Endpoints: []webhookrelay.OutboundImportEndpoint{{
+		Consumer:   "customer_42",
+		URL:        "https://customer.example/webhooks",
+		EventTypes: []string{"invoice.paid"},
+		Secret:     "whsec_...", // the customer's existing signing secret
+		Paused:     true,        // resume once you stop sending from the old system
+	}},
+})
+var apiErr *webhookrelay.APIError
+if errors.As(err, &apiErr) {
+	for _, item := range apiErr.ImportErrors {
+		fmt.Printf("%s #%d %s: %s\n", item.Kind, item.Index, item.Key, item.Error)
+	}
+}
+// Poll until task.Done(); one import runs at a time (409 otherwise).
+task, err = api.GetOutboundImport(task.ID)
+```
+
 A runnable version lives in [`examples/outbound`](examples/outbound).
 
 ## More capabilities
