@@ -205,3 +205,31 @@ func TestExampleImportStopsWhenItsContextEnds(t *testing.T) {
 		t.Fatalf("expected the import to stop at the context's deadline, got %v after %s", err, time.Since(started))
 	}
 }
+
+func TestExampleCreatesAQueueEndpoint(t *testing.T) {
+	var body map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/outbound/consumers/customer_42/endpoints" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"ep-1","type":"aws_sqs","url":"https://sqs.eu-west-1.amazonaws.com/1/orders","credentials_identity":"AKIAEXAMPLE"}`))
+	}))
+	defer server.Close()
+	api, err := webhookrelay.NewWithAPIKey("sk-test", webhookrelay.WithAPIEndpointURL(server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	endpoint, err := CreateQueueEndpoint(api, "https://sqs.eu-west-1.amazonaws.com/1/orders", "AKIAEXAMPLE", "secret")
+	if err != nil {
+		t.Fatalf("CreateQueueEndpoint: %v", err)
+	}
+	if body["type"] != "aws_sqs" || body["destination"].(map[string]interface{})["aws_sqs"] == nil || body["credentials"] == nil {
+		t.Fatalf("unexpected body %v", body)
+	}
+	if endpoint.CredentialsIdentity != "AKIAEXAMPLE" {
+		t.Fatalf("unexpected endpoint %+v", endpoint)
+	}
+}

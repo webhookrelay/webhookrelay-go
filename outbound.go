@@ -193,10 +193,14 @@ type OutboundEndpoint struct {
 	// Destination is set for cloud endpoints. Their credentials are
 	// write-only and never returned.
 	Destination *OutboundDestination `json:"destination,omitempty"`
-	Description string               `json:"description"`
-	EventTypes  []string             `json:"event_types"`
-	Headers     map[string]string    `json:"headers,omitempty"`
-	Rate        int                  `json:"rate"`
+	// CredentialsIdentity names a cloud endpoint's credentials without
+	// revealing them: the AWS access key ID or the GCP service account's
+	// email.
+	CredentialsIdentity string            `json:"credentials_identity,omitempty"`
+	Description         string            `json:"description"`
+	EventTypes          []string          `json:"event_types"`
+	Headers             map[string]string `json:"headers,omitempty"`
+	Rate                int               `json:"rate"`
 	// Timeout is seconds per delivery attempt; 0 means 15.
 	Timeout             int        `json:"timeout"`
 	FunctionID          string     `json:"function_id,omitempty"`
@@ -253,12 +257,27 @@ type OutboundEndpointListOptions struct {
 type OutboundEndpointOptions struct {
 	// Consumer is required when creating an endpoint.
 	Consumer string `json:"-"`
-	// URL is a public HTTPS URL.
+	// Type is an OutboundEndpointType* constant: empty (a webhook) or a
+	// queue, topic or bucket in the consumer's own cloud account.
+	Type string `json:"type,omitempty"`
+	// URL is a webhook's public HTTPS URL. Leave it empty for a cloud
+	// endpoint: its URL is derived from Destination.
 	URL string `json:"url"`
+	// Destination configures a cloud endpoint: exactly the block matching
+	// Type. Webhooks have none.
+	Destination *OutboundDestination `json:"destination,omitempty"`
+	// Credentials authenticate a cloud endpoint: required on create,
+	// write-only, and never returned (reads show CredentialsIdentity). On
+	// update, nil keeps the stored ones; send new ones to replace them, which
+	// the API requires when the type changes cloud or an AWS endpoint_url
+	// changes.
+	Credentials *OutboundEndpointCredentials `json:"credentials,omitempty"`
 	// EventTypes lists the event types to deliver, or []string{"*"} for all.
-	EventTypes  []string          `json:"event_types"`
-	Description string            `json:"description,omitempty"`
-	Headers     map[string]string `json:"headers,omitempty"`
+	EventTypes  []string `json:"event_types"`
+	Description string   `json:"description,omitempty"`
+	// Headers are extra request headers for a webhook; the API refuses them
+	// on cloud endpoints.
+	Headers map[string]string `json:"headers,omitempty"`
 	// Rate is deliveries per second; 0 uses the consumer's rate.
 	Rate int `json:"rate,omitempty"`
 	// Timeout is seconds per attempt, up to 60; 0 means 15.
@@ -465,15 +484,19 @@ func (api *API) GetOutboundEndpoint(id string) (*OutboundEndpoint, error) {
 	return api.outboundEndpoint(http.MethodGet, outboundPath("endpoints", id), nil)
 }
 
-// CreateOutboundEndpoint registers an HTTPS endpoint for options.Consumer. The
-// returned endpoint carries its signing secret; share it with your customer
-// so they can verify deliveries.
+// CreateOutboundEndpoint registers an endpoint for options.Consumer: an HTTPS
+// webhook, or a queue, topic or bucket in the consumer's cloud account (Type,
+// Destination and Credentials). The returned endpoint carries its signing
+// secret; share it with your customer so they can verify deliveries. Cloud
+// deliveries carry the same Standard Webhooks values as message attributes or
+// object metadata.
 func (api *API) CreateOutboundEndpoint(options *OutboundEndpointOptions) (*OutboundEndpoint, error) {
 	return api.outboundEndpoint(http.MethodPost, outboundPath("consumers", options.Consumer, "endpoints"), options)
 }
 
 // UpdateOutboundEndpoint replaces an endpoint's configuration. Its state and
-// signing secrets are kept.
+// signing secrets are kept, and so are a cloud endpoint's credentials unless
+// options.Credentials sends new ones.
 func (api *API) UpdateOutboundEndpoint(id string, options *OutboundEndpointOptions) (*OutboundEndpoint, error) {
 	return api.outboundEndpoint(http.MethodPut, outboundPath("endpoints", id), options)
 }

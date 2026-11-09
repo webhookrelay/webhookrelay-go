@@ -280,6 +280,31 @@ failing, err := api.ListAllOutboundEndpoints(&webhookrelay.OutboundEndpointListO
 })
 ```
 
+Customers who would rather receive events in their own cloud than at an HTTPS
+URL get a cloud endpoint: an SQS queue, SNS topic, S3 bucket, Pub/Sub topic
+or GCS bucket in their account (`OutboundEndpointTypeAWSSQS`, `…AWSSNS`,
+`…AWSS3`, `…GCPPubSub`, `…GCPGCS`). Deliveries carry the body unchanged, with
+the Standard Webhooks values as message attributes or object metadata.
+Credentials are theirs, write-only and never returned: reads show
+`CredentialsIdentity` (the access key ID or service account email), and an
+update without `Credentials` keeps the stored ones. Custom headers apply to
+webhooks only.
+
+```go
+endpoint, err := api.CreateOutboundEndpoint(&webhookrelay.OutboundEndpointOptions{
+	Consumer: "customer_42",
+	Type:     webhookrelay.OutboundEndpointTypeAWSSQS,
+	Destination: &webhookrelay.OutboundDestination{AWSSQS: &webhookrelay.OutboundAWSSQS{
+		QueueURL: "https://sqs.eu-west-1.amazonaws.com/123456789012/invoices",
+	}},
+	Credentials: &webhookrelay.OutboundEndpointCredentials{AWS: &webhookrelay.OutboundAWSCredentials{
+		AccessKeyID: "AKIA...", SecretAccessKey: "...",
+	}},
+	EventTypes: []string{"invoice.paid"},
+})
+// endpoint.URL is derived from the queue; endpoint.CredentialsIdentity == "AKIA..."
+```
+
 Migrating many customers at once? `StartOutboundImport` creates event types,
 consumers and endpoints (webhooks or cloud destinations, optionally with their
 existing `whsec_` secrets and starting `Paused` for a cutover) in one background

@@ -66,6 +66,23 @@ func FailingEndpoints(api *webhookrelay.API) ([]*webhookrelay.OutboundEndpoint, 
 	})
 }
 
+// CreateQueueEndpoint delivers a customer's events to their own SQS queue
+// instead of an HTTPS URL. The access key is theirs, scoped to sending to that
+// queue; it is stored encrypted and never returned (the endpoint shows its
+// key ID in CredentialsIdentity).
+func CreateQueueEndpoint(api *webhookrelay.API, queueURL, accessKeyID, secretAccessKey string) (*webhookrelay.OutboundEndpoint, error) {
+	return api.CreateOutboundEndpoint(&webhookrelay.OutboundEndpointOptions{
+		Consumer:    "customer_42",
+		Type:        webhookrelay.OutboundEndpointTypeAWSSQS,
+		Destination: &webhookrelay.OutboundDestination{AWSSQS: &webhookrelay.OutboundAWSSQS{QueueURL: queueURL}},
+		Credentials: &webhookrelay.OutboundEndpointCredentials{AWS: &webhookrelay.OutboundAWSCredentials{
+			AccessKeyID:     accessKeyID,
+			SecretAccessKey: secretAccessKey,
+		}},
+		EventTypes: []string{"invoice.paid"},
+	})
+}
+
 // ImportCustomers migrates customers from another sender in one request and
 // waits for the import to finish, checking every poll until ctx is done. A
 // refused import returns a 400 *webhookrelay.APIError whose ImportErrors list
