@@ -128,10 +128,7 @@ func CreateRegionalEndpoint(api *webhookrelay.API, customerURL string) (*webhook
 		URL:        customerURL,
 		EventTypes: []string{"invoice.paid"},
 		Channels:   []string{"eu"},
-		Filter: webhookrelay.OutboundFilter{
-			"amount": map[string]interface{}{"$gte": 100},
-			"refund": map[string]interface{}{"$exists": false},
-		},
+		Filter:     webhookrelay.OutboundFilter(`{"amount": {"$gte": 100}, "refund": {"$exists": false}}`),
 	})
 }
 
@@ -160,7 +157,8 @@ func MoveEndpointToRegion(api *webhookrelay.API, endpointID, channel string) (*w
 }
 
 // SendTestEvent sends the event type's example payload to one endpoint, for
-// example from a "send test" button. The endpoint's filter applies.
+// example from a "send test" button. The endpoint's channels and filter do
+// not apply: the test reaches the endpoint whatever its payload.
 func SendTestEvent(api *webhookrelay.API, endpointID string) (*webhookrelay.OutboundMessage, error) {
 	return api.SendOutboundTest(endpointID, &webhookrelay.OutboundTestOptions{EventType: "invoice.paid"})
 }

@@ -1,6 +1,7 @@
 package webhookrelay
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -22,8 +23,9 @@ const (
 type OutboundPortalSessionOptions struct {
 	// Capabilities is OutboundPortalManage (the default) or OutboundPortalRead.
 	Capabilities string
-	// TTL is how long the session lasts once opened, 1 hour to 7 days, sent
-	// in whole seconds; 0 means 12 hours.
+	// TTL is how long the session lasts once opened: 0 (12 hours) or 1 hour
+	// to 7 days in whole seconds. CreateOutboundPortalSession refuses any
+	// other value instead of rounding it.
 	TTL time.Duration
 	// Next opens the portal on one page: "endpoints/<id>", "endpoints/new",
 	// "event-types" or "messages/<id>".
@@ -58,6 +60,9 @@ func (api *API) CreateOutboundPortalSession(consumer string, options *OutboundPo
 	if options == nil {
 		options = &OutboundPortalSessionOptions{}
 	}
+	if err := validatePortalSessionTTL(options.TTL); err != nil {
+		return nil, err
+	}
 	body := outboundPortalSessionBody{
 		Capabilities: options.Capabilities,
 		TTL:          int(options.TTL / time.Second),
@@ -85,4 +90,25 @@ func (api *API) ExpireOutboundPortalSessions(consumer, sessionID string) (int64,
 		return 0, err
 	}
 	return out.Ended, nil
+}
+
+// Portal session TTL bounds the API accepts.
+const (
+	minOutboundPortalSessionTTL = time.Hour
+	maxOutboundPortalSessionTTL = 7 * 24 * time.Hour
+)
+
+// validatePortalSessionTTL refuses a TTL the API would reject or that would
+// lose its fraction of a second when sent.
+func validatePortalSessionTTL(ttl time.Duration) error {
+	if ttl == 0 {
+		return nil
+	}
+	if ttl < minOutboundPortalSessionTTL || ttl > maxOutboundPortalSessionTTL {
+		return fmt.Errorf("portal session TTL %s is outside 1h to 168h", ttl)
+	}
+	if ttl%time.Second != 0 {
+		return fmt.Errorf("portal session TTL %s is not a whole number of seconds", ttl)
+	}
+	return nil
 }

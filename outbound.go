@@ -275,7 +275,45 @@ type OutboundEndpointListOptions struct {
 //
 // Sibling keys are ANDed. An object mixes no operators with field names. At
 // most 4 KiB and 8 levels deep; the API refuses an invalid filter with 400.
-type OutboundFilter map[string]interface{}
+//
+// It holds the filter's JSON exactly as written or as the API returned it, so
+// numbers beyond float64 precision (9007199254740993, 0.30000000000000000001)
+// survive a read-modify-write through UpdateOptions. Write one as a literal,
+// OutboundFilter(`{"type": "invoice"}`), or build it with NewOutboundFilter.
+// To inspect one, decode it with a json.Decoder and UseNumber to keep its
+// numbers exact. nil (or empty) is no filter.
+type OutboundFilter []byte
+
+// NewOutboundFilter marshals v (a map or struct) into a filter. Numbers pass
+// through encoding/json, so use json.Number for values a float64 cannot hold.
+func NewOutboundFilter(v interface{}) (OutboundFilter, error) {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	return OutboundFilter(raw), nil
+}
+
+// MarshalJSON sends the filter's bytes unchanged; an empty filter is null.
+func (f OutboundFilter) MarshalJSON() ([]byte, error) {
+	if len(f) == 0 {
+		return []byte("null"), nil
+	}
+	return f, nil
+}
+
+// UnmarshalJSON keeps a copy of the filter's bytes; null is no filter.
+func (f *OutboundFilter) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*f = nil
+		return nil
+	}
+	*f = append(OutboundFilter(nil), data...)
+	return nil
+}
+
+// String returns the filter's JSON.
+func (f OutboundFilter) String() string { return string(f) }
 
 // OutboundEndpointOptions configures an endpoint.
 type OutboundEndpointOptions struct {
@@ -585,7 +623,7 @@ func (e *OutboundEndpoint) UpdateOptions() *OutboundEndpointOptions {
 		AutoDisable: e.AutoDisable,
 		FunctionID:  e.FunctionID,
 		Channels:    append([]string(nil), e.Channels...),
-		Filter:      e.Filter,
+		Filter:      append(OutboundFilter(nil), e.Filter...),
 	}
 	if e.Destination == nil {
 		// A cloud endpoint's URL is derived from its destination.
@@ -635,10 +673,11 @@ func (api *API) PublishOutboundMessage(options *OutboundMessagePublishOptions) (
 }
 
 // SendOutboundTest publishes a test event that only this endpoint receives,
-// signed, retried and recorded like any other message and marked Test. The
-// endpoint's filter applies, its channels do not. Tests do not count toward
+// signed, retried and recorded like any other message and marked Test.
+// Neither the endpoint's channels nor its filter apply: a test always reaches
+// the endpoint, whatever its payload. Tests do not count toward
 // the monthly message quota; an account can send 100 in any 24 hours (429
-// beyond). Paused and disabled endpoints refuse them with 409. options may be
+// beyond, which the client returns without retrying). Paused and disabled endpoints refuse them with 409. options may be
 // nil.
 func (api *API) SendOutboundTest(endpointID string, options *OutboundTestOptions) (*OutboundMessage, error) {
 	if options == nil {

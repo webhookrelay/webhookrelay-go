@@ -311,7 +311,9 @@ of them; an endpoint without channels receives only messages without
 channels. A `Filter` (Hookdeck-style: equality, dotted paths, `$eq` `$neq`
 `$in` `$nin` `$exists` `$gt` `$gte` `$lt` `$lte`, `$or` / `$and`) is matched
 against the published payload; filtered-out messages are recorded as rejected
-and never attempted.
+and never attempted. `OutboundFilter` is the filter's raw JSON, kept byte for
+byte so large or precise numbers survive a read and an update;
+`NewOutboundFilter` marshals a map or struct into one.
 
 ```go
 endpoint, err := api.CreateOutboundEndpoint(&webhookrelay.OutboundEndpointOptions{
@@ -319,10 +321,7 @@ endpoint, err := api.CreateOutboundEndpoint(&webhookrelay.OutboundEndpointOption
 	URL:        "https://customer.example/webhooks",
 	EventTypes: []string{"invoice.paid"},
 	Channels:   []string{"eu"},
-	Filter: webhookrelay.OutboundFilter{
-		"amount":             map[string]interface{}{"$gte": 100},
-		"data.customer.tier": "gold",
-	},
+	Filter:     webhookrelay.OutboundFilter(`{"amount": {"$gte": 100}, "data.customer.tier": "gold"}`),
 })
 _, err = api.PublishOutboundMessage(&webhookrelay.OutboundMessagePublishOptions{
 	Consumer: "customer_42", EventType: "invoice.paid", Payload: invoice,
@@ -341,8 +340,10 @@ endpoint, err = api.UpdateOutboundEndpoint(endpoint.ID, options)
 ```
 
 `SendOutboundTest` sends a test event to one endpoint (the event type's
-example payload unless you pass one; the endpoint's filter applies). Tests do
-not count toward the message quota; an account can send 100 a day.
+example payload unless you pass one). The endpoint's channels and filter do
+not apply, so a test always reaches it. Tests do not count toward the message
+quota; an account can send 100 a day, and the client returns that limit's 429
+without retrying.
 
 ```go
 message, err := api.SendOutboundTest(endpoint.ID, &webhookrelay.OutboundTestOptions{EventType: "invoice.paid"})

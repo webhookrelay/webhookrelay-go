@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -55,11 +56,7 @@ func mustJSON(t *testing.T, s string) map[string]interface{} {
 }
 
 func TestOutboundEndpointChannelsAndFilter(t *testing.T) {
-	filter := OutboundFilter{
-		"data.customer.tier": "gold",
-		"amount":             map[string]interface{}{"$gte": 100, "$lt": 1000},
-		"$or":                []interface{}{map[string]interface{}{"status": "paid"}, map[string]interface{}{"refund": map[string]interface{}{"$exists": false}}},
-	}
+	filter := OutboundFilter(`{"data.customer.tier":"gold","amount":{"$gte":100,"$lt":1000},"$or":[{"status":"paid"},{"refund":{"$exists":false}}]}`)
 	api, requests := routingServer(t, http.StatusCreated,
 		`{"id":"ep-1","consumer":"cust_42","url":"https://example.com/hook","event_types":["*"],"channels":["eu"],"filter":{"data.customer.tier":"gold"},"environment":"test"}`)
 
@@ -82,7 +79,7 @@ func TestOutboundEndpointChannelsAndFilter(t *testing.T) {
 	if !reflect.DeepEqual(req.Body, want) {
 		t.Fatalf("body = %v\nwant   %v", req.Body, want)
 	}
-	if endpoint.Environment != "test" || !reflect.DeepEqual(endpoint.Channels, []string{"eu"}) || endpoint.Filter["data.customer.tier"] != "gold" {
+	if endpoint.Environment != "test" || !reflect.DeepEqual(endpoint.Channels, []string{"eu"}) || endpoint.Filter.String() != `{"data.customer.tier":"gold"}` {
 		t.Fatalf("unexpected endpoint %+v", endpoint)
 	}
 }
@@ -111,7 +108,7 @@ func TestOutboundEndpointUpdateOptionsKeepsEverySetting(t *testing.T) {
 		ID: "ep-1", Consumer: "cust_42", Type: OutboundEndpointTypeWebhook, URL: "https://example.com/hook",
 		Description: "orders", EventTypes: []string{"invoice.paid"}, Headers: map[string]string{"X-Team": "billing"},
 		Rate: 5, Timeout: 30, FunctionID: "fn-1", AutoDisable: true,
-		Channels: []string{"eu"}, Filter: OutboundFilter{"type": "invoice"},
+		Channels: []string{"eu"}, Filter: OutboundFilter(`{"type":"invoice"}`),
 		State: OutboundEndpointStateActive, Secret: "whsec_never_sent",
 	}
 	options := endpoint.UpdateOptions()
@@ -131,8 +128,59 @@ func TestOutboundEndpointUpdateOptionsKeepsEverySetting(t *testing.T) {
 	// The copy is independent of the endpoint it came from.
 	options.Channels[0] = "us"
 	options.Headers["X-Team"] = "ops"
-	if endpoint.Channels[0] != "eu" || endpoint.Headers["X-Team"] != "billing" {
+	options.Filter[2] = 'X'
+	if endpoint.Channels[0] != "eu" || endpoint.Headers["X-Team"] != "billing" || endpoint.Filter.String() != `{"type":"invoice"}` {
 		t.Fatalf("UpdateOptions shares slices or maps with the endpoint: %+v", endpoint)
+	}
+}
+
+// A filter read from the API goes back byte for byte: numbers a float64 cannot
+// hold are neither rounded nor reformatted by a read-modify-write.
+func TestOutboundEndpointFilterRoundTripsExactly(t *testing.T) {
+	const filter = `{"amount":{"$gte":9007199254740993},"ratio":{"$lt":0.30000000000000000001},"id":{"$in":[123456789012345678901234567890]}}`
+	var bodies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			raw, _ := io.ReadAll(r.Body)
+			bodies = append(bodies, string(raw))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"ep-1","consumer":"cust_42","url":"https://example.com/hook","event_types":["*"],"filter":` + filter + `}`))
+	}))
+	t.Cleanup(server.Close)
+	api, err := NewWithAPIKey("sk-test", WithAPIEndpointURL(server.URL), WithRetryPolicy(0, 0, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	endpoint, err := api.GetOutboundEndpoint("ep-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if endpoint.Filter.String() != filter {
+		t.Fatalf("filter read as %s", endpoint.Filter)
+	}
+	options := endpoint.UpdateOptions()
+	options.Description = "changed"
+	if _, err := api.UpdateOutboundEndpoint(endpoint.ID, options); err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 1 || !strings.Contains(bodies[0], `"filter":`+filter) {
+		t.Fatalf("PUT body does not carry the filter verbatim: %v", bodies)
+	}
+}
+
+func TestNewOutboundFilter(t *testing.T) {
+	filter, err := NewOutboundFilter(map[string]interface{}{"amount": map[string]interface{}{"$gte": json.Number("9007199254740993")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filter.String() != `{"amount":{"$gte":9007199254740993}}` {
+		t.Fatalf("unexpected filter %s", filter)
+	}
+	var endpoint OutboundEndpoint
+	if err := json.Unmarshal([]byte(`{"filter":null}`), &endpoint); err != nil || endpoint.Filter != nil {
+		t.Fatalf("null filter decoded as %q (%v)", endpoint.Filter, err)
 	}
 }
 
@@ -327,6 +375,26 @@ func TestOutboundPortalSessions(t *testing.T) {
 		}
 		if body := (*requests)[0].Body; len(body) != 0 {
 			t.Fatalf("expected an empty body, got %v", body)
+		}
+	})
+	t.Run("TTL outside the API's bounds or not whole seconds is refused", func(t *testing.T) {
+		for _, ttl := range []time.Duration{time.Second, 59 * time.Minute, 7*24*time.Hour + time.Second, -time.Hour, 2*time.Hour + 500*time.Millisecond} {
+			api, requests := routingServer(t, http.StatusCreated, `{"url":"u"}`)
+			if _, err := api.CreateOutboundPortalSession("cust_42", &OutboundPortalSessionOptions{TTL: ttl}); err == nil {
+				t.Fatalf("TTL %s accepted", ttl)
+			}
+			if len(*requests) != 0 {
+				t.Fatalf("TTL %s was sent", ttl)
+			}
+		}
+		for ttl, want := range map[time.Duration]float64{time.Hour: 3600, 7 * 24 * time.Hour: 604800} {
+			api, requests := routingServer(t, http.StatusCreated, `{"url":"u"}`)
+			if _, err := api.CreateOutboundPortalSession("cust_42", &OutboundPortalSessionOptions{TTL: ttl}); err != nil {
+				t.Fatalf("TTL %s: %v", ttl, err)
+			}
+			if got := (*requests)[0].Body["ttl"]; got != want {
+				t.Fatalf("TTL %s sent as %v", ttl, got)
+			}
 		}
 	})
 	t.Run("expire tagged sessions", func(t *testing.T) {
