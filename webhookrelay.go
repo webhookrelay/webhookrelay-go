@@ -88,6 +88,9 @@ type API struct {
 	retryPolicy RetryPolicy
 	rateLimiter *rate.Limiter
 	logger      Logger
+	// outboundEnvironment is sent as X-Outbound-Environment on every
+	// outbound call; empty means the default environment.
+	outboundEnvironment string
 	// reqCtx is the per-call context set via WithContext; nil means
 	// context.Background(). It bounds rate-limiter waits, retry backoff and
 	// the HTTP requests themselves.
@@ -324,10 +327,11 @@ func (api *API) shouldRetry(resp *http.Response, body []byte) (bool, time.Durati
 	return true, wait
 }
 
-// isQuotaExhausted reports whether a 429 body is one that lasts until the
-// next billing period: the Outbound Gateway's monthly message quota
-// ({"error": "monthly outbound message quota reached: ..."}) or the agent's
-// monthly token allowance ({"code": "agent_quota_exceeded"}).
+// isQuotaExhausted reports whether a 429 body is a quota that lasts far
+// beyond the retries: the Outbound Gateway's monthly message quota
+// ({"error": "monthly outbound message quota reached: ..."}), its daily test
+// event limit ({"error": "daily test event limit reached: ..."}) or the
+// agent's monthly token allowance ({"code": "agent_quota_exceeded"}).
 func isQuotaExhausted(body []byte) bool {
 	var payload struct {
 		Error string `json:"error"`
@@ -337,7 +341,8 @@ func isQuotaExhausted(body []byte) bool {
 		return false
 	}
 	return payload.Code == "agent_quota_exceeded" ||
-		strings.HasPrefix(payload.Error, "monthly outbound message quota reached")
+		strings.HasPrefix(payload.Error, "monthly outbound message quota reached") ||
+		strings.Contains(payload.Error, "daily test event limit reached")
 }
 
 // parseRetryAfter reads a Retry-After header given in seconds or as an HTTP

@@ -43,6 +43,7 @@ func requireAPIStatus(t *testing.T, err error, status int) {
 func TestQuotaExhausted429IsNotRetried(t *testing.T) {
 	for name, body := range map[string]string{
 		"outbound messages": `{"error":"monthly outbound message quota reached: 1000 messages this billing month, renewing 2026-11-01; add an outbound message pack or upgrade at https://my.webhookrelay.com/plans"}`,
+		"daily test events": `{"error":"daily test event limit reached: 100 test events in 24 hours"}`,
 		"agent tokens":      `{"error":"this month's agent token allowance is used up","code":"agent_quota_exceeded","quota":{}}`,
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -118,3 +118,77 @@ func ImportCustomers(ctx context.Context, api *webhookrelay.API, customerURL str
 	}
 	return task, nil
 }
+
+// CreateRegionalEndpoint subscribes a customer's endpoint to one channel and
+// filters on the payload: it only receives invoice.paid messages published to
+// the "eu" channel for invoices of at least 100 that were not refunded.
+func CreateRegionalEndpoint(api *webhookrelay.API, customerURL string) (*webhookrelay.OutboundEndpoint, error) {
+	return api.CreateOutboundEndpoint(&webhookrelay.OutboundEndpointOptions{
+		Consumer:   "customer_42",
+		URL:        customerURL,
+		EventTypes: []string{"invoice.paid"},
+		Channels:   []string{"eu"},
+		Filter:     webhookrelay.OutboundFilter(`{"amount": {"$gte": 100}, "refund": {"$exists": false}}`),
+	})
+}
+
+// PublishToRegion publishes to the "eu" channel: endpoints with other
+// channels do not receive it, endpoints without channels do not either.
+func PublishToRegion(api *webhookrelay.API) (*webhookrelay.OutboundMessage, error) {
+	return api.PublishOutboundMessage(&webhookrelay.OutboundMessagePublishOptions{
+		Consumer:       "customer_42",
+		EventType:      "invoice.paid",
+		Payload:        map[string]interface{}{"invoice_id": "inv_124", "amount": 4900},
+		Channels:       []string{"eu"},
+		IdempotencyKey: "invoice-paid:inv_124",
+	})
+}
+
+// MoveEndpointToRegion changes one setting of an endpoint. Updates replace
+// the whole configuration, so it starts from the endpoint's current one.
+func MoveEndpointToRegion(api *webhookrelay.API, endpointID, channel string) (*webhookrelay.OutboundEndpoint, error) {
+	endpoint, err := api.GetOutboundEndpoint(endpointID)
+	if err != nil {
+		return nil, err
+	}
+	options := endpoint.UpdateOptions()
+	options.Channels = []string{channel}
+	return api.UpdateOutboundEndpoint(endpointID, options)
+}
+
+// SendTestEvent sends the event type's example payload to one endpoint, for
+// example from a "send test" button. The endpoint's channels and filter do
+// not apply: the test reaches the endpoint whatever its payload.
+func SendTestEvent(api *webhookrelay.API, endpointID string) (*webhookrelay.OutboundMessage, error) {
+	return api.SendOutboundTest(endpointID, &webhookrelay.OutboundTestOptions{EventType: "invoice.paid"})
+}
+
+// SetUpTestEnvironment creates a "test" environment, once, and returns a client
+// acting in it; the original client keeps acting in the default environment.
+// Clients can also start in one: webhookrelay.WithOutboundEnvironment("test").
+func SetUpTestEnvironment(api *webhookrelay.API) (*webhookrelay.API, error) {
+	_, err := api.CreateOutboundEnvironment(&webhookrelay.OutboundEnvironmentOptions{Name: "test", Description: "Staging"})
+	if err != nil && !webhookrelay.IsConflict(err) { // 409: it already exists
+		return nil, err
+	}
+	return api.OutboundEnvironment("test"), nil
+}
+
+// PortalURL mints a consumer portal link for one page load of your app, tagged
+// with your user's session so SignOut can end it. Never log the URL: it
+// carries a one-time token.
+func PortalURL(api *webhookrelay.API, userSession string) (string, error) {
+	link, err := api.CreateOutboundPortalSession("customer_42", &webhookrelay.OutboundPortalSessionOptions{
+		TTL:       time.Hour,
+		SessionID: userSession,
+	})
+	if err != nil {
+		return "", err
+	}
+	return link.URL, nil
+}
+
+// SignOut ends the portal sessions opened for your user's session.
+func SignOut(api *webhookrelay.API, userSession string) (int64, error) {
+	return api.ExpireOutboundPortalSessions("customer_42", userSession)
+}
