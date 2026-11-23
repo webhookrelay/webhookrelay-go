@@ -168,8 +168,17 @@ func TestOutboundImportEndpointCarriesEveryEndpointOption(t *testing.T) {
 	// A cloud endpoint has no URL, so an import may omit it; creating a
 	// webhook endpoint always sends one.
 	differ := map[string]string{"url": "url,omitempty"}
+	// The import API does not take channels or filters: set them with
+	// UpdateOutboundEndpoint after the import. Sending them would be dropped.
+	notImported := map[string]bool{"channels": true, "filter": true}
 	importFields := jsonFields(reflect.TypeOf(OutboundImportEndpoint{}))
 	for name, option := range jsonFields(reflect.TypeOf(OutboundEndpointOptions{})) {
+		if notImported[name] {
+			if _, ok := importFields[name]; ok {
+				t.Errorf("OutboundImportEndpoint has %q, which the import API does not take", name)
+			}
+			continue
+		}
 		got, ok := importFields[name]
 		want := option.tag
 		if tag, ok := differ[name]; ok {

@@ -88,6 +88,9 @@ type API struct {
 	retryPolicy RetryPolicy
 	rateLimiter *rate.Limiter
 	logger      Logger
+	// outboundEnvironment is sent as X-Outbound-Environment on every
+	// outbound call; empty means the default environment.
+	outboundEnvironment string
 	// reqCtx is the per-call context set via WithContext; nil means
 	// context.Background(). It bounds rate-limiter waits, retry backoff and
 	// the HTTP requests themselves.

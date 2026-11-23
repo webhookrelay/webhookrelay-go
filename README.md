@@ -305,6 +305,78 @@ endpoint, err := api.CreateOutboundEndpoint(&webhookrelay.OutboundEndpointOption
 // endpoint.URL is derived from the queue; endpoint.CredentialsIdentity == "AKIA..."
 ```
 
+Route messages within a consumer with **channels** and **payload filters**.
+An endpoint with `Channels` receives only messages published to at least one
+of them; an endpoint without channels receives only messages without
+channels. A `Filter` (Hookdeck-style: equality, dotted paths, `$eq` `$neq`
+`$in` `$nin` `$exists` `$gt` `$gte` `$lt` `$lte`, `$or` / `$and`) is matched
+against the published payload; filtered-out messages are recorded as rejected
+and never attempted.
+
+```go
+endpoint, err := api.CreateOutboundEndpoint(&webhookrelay.OutboundEndpointOptions{
+	Consumer:   "customer_42",
+	URL:        "https://customer.example/webhooks",
+	EventTypes: []string{"invoice.paid"},
+	Channels:   []string{"eu"},
+	Filter: webhookrelay.OutboundFilter{
+		"amount":             map[string]interface{}{"$gte": 100},
+		"data.customer.tier": "gold",
+	},
+})
+_, err = api.PublishOutboundMessage(&webhookrelay.OutboundMessagePublishOptions{
+	Consumer: "customer_42", EventType: "invoice.paid", Payload: invoice,
+	Channels: []string{"eu"},
+})
+```
+
+`UpdateOutboundEndpoint` replaces the whole configuration, so an update
+without `Channels` or `Filter` clears them. Start from the current endpoint to
+change one setting:
+
+```go
+options := endpoint.UpdateOptions()
+options.Description = "Invoices (EU)"
+endpoint, err = api.UpdateOutboundEndpoint(endpoint.ID, options)
+```
+
+`SendOutboundTest` sends a test event to one endpoint (the event type's
+example payload unless you pass one; the endpoint's filter applies). Tests do
+not count toward the message quota; an account can send 100 a day.
+
+```go
+message, err := api.SendOutboundTest(endpoint.ID, &webhookrelay.OutboundTestOptions{EventType: "invoice.paid"})
+// message.Test == true
+```
+
+**Environments** keep, for example, test traffic apart from live: each owns
+its consumers, event types, endpoints, messages and portal sessions. Every
+account has `default`; create others and pick one per client, or derive a
+client bound to another environment (a cheap copy, like `WithContext`):
+
+```go
+_, err = api.CreateOutboundEnvironment(&webhookrelay.OutboundEnvironmentOptions{Name: "test", Description: "Staging"})
+test, err := webhookrelay.NewWithAPIKey(key, webhookrelay.WithOutboundEnvironment("test"))
+live := test.OutboundEnvironment("live")
+environments, err := api.ListOutboundEnvironments()
+err = api.DeleteOutboundEnvironment("test") // 409 while it has consumers or event types
+```
+
+The **consumer portal** lets a customer manage their own endpoints and read
+their deliveries. Mint a link server-side on each page load and embed it in
+an iframe (its origin must be in the portal settings' allowed origins); the
+URL carries a one-time token, so never log it:
+
+```go
+link, err := api.CreateOutboundPortalSession("customer_42", &webhookrelay.OutboundPortalSessionOptions{
+	Capabilities: webhookrelay.OutboundPortalManage, // or OutboundPortalRead
+	TTL:          12 * time.Hour,
+	SessionID:    userSessionID, // your tag, to end it later
+})
+// link.URL, link.ExpiresAt, link.TokenExpiresAt
+ended, err := api.ExpireOutboundPortalSessions("customer_42", userSessionID) // "" ends them all
+```
+
 Migrating many customers at once? `StartOutboundImport` creates event types,
 consumers and endpoints (webhooks or cloud destinations, optionally with their
 existing `whsec_` secrets and starting `Paused` for a cutover) in one background
@@ -352,8 +424,9 @@ if task.Status == webhookrelay.OutboundImportStatusFailed {
 ```
 
 Item keys name endpoints by URL, which may be sensitive, so log them with care.
-A runnable version, the import included (`ImportCustomers`), lives in
-[`examples/outbound`](examples/outbound).
+Runnable versions of everything above (onboarding, channels and filters,
+test sends, environments, portal links, cloud endpoints and the import) live
+in [`examples/outbound`](examples/outbound).
 
 ## More capabilities
 
@@ -383,7 +456,8 @@ api, err := webhookrelay.NewWithAPIKey(os.Getenv("RELAY_API_KEY"),
 ```
 
 Available options: `WithHTTPClient`, `WithAPIEndpointURL`, `WithHeaders`,
-`WithRetryPolicy`, `WithUserAgent`, `WithLogger`.
+`WithRetryPolicy`, `WithRateLimit`, `WithUserAgent`, `WithLogger`,
+`WithOutboundEnvironment`.
 
 ## Handling errors
 

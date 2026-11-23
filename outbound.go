@@ -56,9 +56,11 @@ type OutboundConsumer struct {
 	Name string `json:"name"`
 	// Rate is the default deliveries per second for the consumer's endpoints;
 	// 0 means 50.
-	Rate      int       `json:"rate"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Rate int `json:"rate"`
+	// Environment is the environment the consumer belongs to.
+	Environment string    `json:"environment,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // OutboundConsumerOptions creates or updates a consumer.
@@ -74,9 +76,11 @@ type OutboundEventType struct {
 	Description string          `json:"description"`
 	Example     json.RawMessage `json:"example,omitempty"`
 	// Deprecated event types cannot be published.
-	Deprecated bool      `json:"deprecated"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	Deprecated bool `json:"deprecated"`
+	// Environment is the environment the event type belongs to.
+	Environment string    `json:"environment,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // OutboundEventTypeOptions creates or updates an event type.
@@ -202,8 +206,16 @@ type OutboundEndpoint struct {
 	Headers             map[string]string `json:"headers,omitempty"`
 	Rate                int               `json:"rate"`
 	// Timeout is seconds per delivery attempt; 0 means 15.
-	Timeout             int        `json:"timeout"`
-	FunctionID          string     `json:"function_id,omitempty"`
+	Timeout    int    `json:"timeout"`
+	FunctionID string `json:"function_id,omitempty"`
+	// Channels limit the endpoint to messages published with at least one of
+	// them; empty receives every message of its event types.
+	Channels []string `json:"channels,omitempty"`
+	// Filter is the payload filter deliveries must match; nil delivers every
+	// message.
+	Filter OutboundFilter `json:"filter,omitempty"`
+	// Environment is the environment the endpoint belongs to.
+	Environment         string     `json:"environment,omitempty"`
 	AutoDisable         bool       `json:"auto_disable"`
 	State               string     `json:"state"`
 	ConsecutiveFailures int        `json:"consecutive_failures"`
@@ -253,6 +265,18 @@ type OutboundEndpointListOptions struct {
 	Offset int
 }
 
+// OutboundFilter is an endpoint's payload filter, a JSON object matched
+// against the published payload before any endpoint Function runs:
+//
+//	{"type": "invoice"}                          // equality; any element of an array field
+//	{"data.customer.tier": "gold"}               // dotted path, or nested objects
+//	{"amount": {"$gte": 100, "$lt": 1000}}       // $eq $neq $in $nin $exists $gt $gte $lt $lte
+//	{"$or": [{"status": "paid"}, {"refund": {"$exists": true}}]}
+//
+// Sibling keys are ANDed. An object mixes no operators with field names. At
+// most 4 KiB and 8 levels deep; the API refuses an invalid filter with 400.
+type OutboundFilter map[string]interface{}
+
 // OutboundEndpointOptions configures an endpoint.
 type OutboundEndpointOptions struct {
 	// Consumer is required when creating an endpoint.
@@ -288,6 +312,14 @@ type OutboundEndpointOptions struct {
 	// FunctionID attaches a Function that can rewrite the JSON body or drop
 	// the message.
 	FunctionID string `json:"function_id,omitempty"`
+	// Channels limit the endpoint to messages published with at least one of
+	// them (at most 10, each 1-128 letters, digits or "-_.:"). An endpoint
+	// without channels receives every message of its event types.
+	Channels []string `json:"channels,omitempty"`
+	// Filter delivers only messages whose payload matches it; nil delivers
+	// every message. Messages it filters out are recorded as rejected and
+	// never attempted. See OutboundFilter.
+	Filter OutboundFilter `json:"filter,omitempty"`
 	// Secret imports an existing Standard Webhooks signing secret ("whsec_"
 	// + 32-100 base64 characters decoding to at least 24 bytes, e.g. exported
 	// from Svix) so the consumer keeps verifying with the key it already has.
@@ -304,7 +336,19 @@ type OutboundMessage struct {
 	EventID     string          `json:"event_id,omitempty"`
 	Payload     json.RawMessage `json:"payload,omitempty"`
 	EndpointIDs []string        `json:"endpoint_ids"`
-	CreatedAt   time.Time       `json:"created_at"`
+	// SkippedEndpointIDs are subscribed endpoints that were paused or
+	// disabled when the message was accepted, with their state then in
+	// SkipReasons. Their deliveries are recorded as skipped, for
+	// ReplayMissingOutboundDeliveries to send once they are resumed.
+	SkippedEndpointIDs []string          `json:"skipped_endpoint_ids,omitempty"`
+	SkipReasons        map[string]string `json:"skip_reasons,omitempty"`
+	// Channels are the channels the message was published to.
+	Channels []string `json:"channels,omitempty"`
+	// Test marks a message sent with SendOutboundTest.
+	Test bool `json:"test,omitempty"`
+	// Environment is the environment the message was published in.
+	Environment string    `json:"environment,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 	// EnqueuedAt is when deliveries were queued; nil while the message is
 	// still being prepared.
 	EnqueuedAt *time.Time `json:"enqueued_at,omitempty"`
@@ -323,10 +367,27 @@ type OutboundMessagePublishOptions struct {
 	EventID string `json:"event_id,omitempty"`
 	// Payload is any value that encodes to JSON, up to 256 KiB.
 	Payload interface{} `json:"payload"`
+	// Channels route the message to the endpoints with at least one of them,
+	// and to none with other channels; at most 10. Without channels the
+	// message only reaches endpoints that have none.
+	Channels []string `json:"channels,omitempty"`
 	// IdempotencyKey makes publishing safe to retry: repeating a publish with
 	// the same key and message returns the original message. When empty, the
 	// client generates one per call, so its own automatic retries cannot
 	// publish twice.
+	IdempotencyKey string `json:"-"`
+}
+
+// OutboundTestOptions sends a test event to one endpoint. Both fields are
+// optional.
+type OutboundTestOptions struct {
+	// EventType defaults to the endpoint's first subscribed event type; it is
+	// required when the endpoint receives all events.
+	EventType string `json:"event_type,omitempty"`
+	// Payload defaults to the event type's example.
+	Payload interface{} `json:"payload,omitempty"`
+	// IdempotencyKey makes the test safe to retry; when empty, the client
+	// generates one per call.
 	IdempotencyKey string `json:"-"`
 }
 
@@ -494,11 +555,49 @@ func (api *API) CreateOutboundEndpoint(options *OutboundEndpointOptions) (*Outbo
 	return api.outboundEndpoint(http.MethodPost, outboundPath("consumers", options.Consumer, "endpoints"), options)
 }
 
-// UpdateOutboundEndpoint replaces an endpoint's configuration. Its state and
-// signing secrets are kept, and so are a cloud endpoint's credentials unless
+// UpdateOutboundEndpoint replaces an endpoint's configuration: a field left
+// empty is cleared, Channels and Filter included. Start from
+// endpoint.UpdateOptions() to change one setting. Its state and signing
+// secrets are kept, and so are a cloud endpoint's credentials unless
 // options.Credentials sends new ones.
 func (api *API) UpdateOutboundEndpoint(id string, options *OutboundEndpointOptions) (*OutboundEndpoint, error) {
 	return api.outboundEndpoint(http.MethodPut, outboundPath("endpoints", id), options)
+}
+
+// UpdateOptions returns the endpoint's configuration as options for
+// UpdateOutboundEndpoint, so a read-modify-write keeps every setting, the
+// channels and filter included:
+//
+//	options := endpoint.UpdateOptions()
+//	options.Channels = []string{"eu"}
+//	endpoint, err = api.UpdateOutboundEndpoint(endpoint.ID, options)
+//
+// Credentials are write-only and left nil, which keeps the stored ones.
+func (e *OutboundEndpoint) UpdateOptions() *OutboundEndpointOptions {
+	options := &OutboundEndpointOptions{
+		Consumer:    e.Consumer,
+		Type:        e.Type,
+		Destination: e.Destination,
+		EventTypes:  append([]string(nil), e.EventTypes...),
+		Description: e.Description,
+		Rate:        e.Rate,
+		Timeout:     e.Timeout,
+		AutoDisable: e.AutoDisable,
+		FunctionID:  e.FunctionID,
+		Channels:    append([]string(nil), e.Channels...),
+		Filter:      e.Filter,
+	}
+	if e.Destination == nil {
+		// A cloud endpoint's URL is derived from its destination.
+		options.URL = e.URL
+	}
+	if len(e.Headers) > 0 {
+		options.Headers = make(map[string]string, len(e.Headers))
+		for k, v := range e.Headers {
+			options.Headers[k] = v
+		}
+	}
+	return options
 }
 
 // DeleteOutboundEndpoint deletes an endpoint. Delivery history is kept.
@@ -532,7 +631,25 @@ func (api *API) RevealOutboundEndpointSecret(id string) (string, error) {
 // endpoint of the consumer subscribed to its event type. Delivery is
 // asynchronous: the returned message is the durable acceptance receipt.
 func (api *API) PublishOutboundMessage(options *OutboundMessagePublishOptions) (*OutboundMessage, error) {
-	key := options.IdempotencyKey
+	return api.outboundMessage(outboundPath("messages"), options, options.IdempotencyKey)
+}
+
+// SendOutboundTest publishes a test event that only this endpoint receives,
+// signed, retried and recorded like any other message and marked Test. The
+// endpoint's filter applies, its channels do not. Tests do not count toward
+// the monthly message quota; an account can send 100 in any 24 hours (429
+// beyond). Paused and disabled endpoints refuse them with 409. options may be
+// nil.
+func (api *API) SendOutboundTest(endpointID string, options *OutboundTestOptions) (*OutboundMessage, error) {
+	if options == nil {
+		options = &OutboundTestOptions{}
+	}
+	return api.outboundMessage(outboundPath("endpoints", endpointID, "test"), options, options.IdempotencyKey)
+}
+
+// outboundMessage posts a message under an idempotency key, generating one
+// when key is empty so the client's own retries cannot send twice.
+func (api *API) outboundMessage(path string, body interface{}, key string) (*OutboundMessage, error) {
 	if key == "" {
 		var err error
 		if key, err = newIdempotencyKey(); err != nil {
@@ -541,7 +658,7 @@ func (api *API) PublishOutboundMessage(options *OutboundMessagePublishOptions) (
 	}
 	headers := http.Header{"Idempotency-Key": []string{key}}
 	var message OutboundMessage
-	if err := api.outbound(http.MethodPost, outboundPath("messages"), options, &message, headers); err != nil {
+	if err := api.outbound(http.MethodPost, path, body, &message, headers); err != nil {
 		return nil, err
 	}
 	return &message, nil
@@ -652,6 +769,12 @@ func (api *API) outboundSecret(id, action string) (string, error) {
 // outbound performs an outbound API request and decodes the response into out
 // when it is not nil.
 func (api *API) outbound(method, path string, params, out interface{}, headers http.Header) error {
+	if api.outboundEnvironment != "" {
+		if headers == nil {
+			headers = http.Header{}
+		}
+		headers.Set(OutboundEnvironmentHeader, api.outboundEnvironment)
+	}
 	resp, err := api.makeRequestWithAuthTypeAndHeaders(api.requestContext(), method, path, params, api.authType, headers)
 	if err != nil {
 		return errors.Wrap(err, errMakeRequestError)

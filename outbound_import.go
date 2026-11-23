@@ -137,6 +137,9 @@ const (
 // OutboundImportTask is the progress of a bulk import.
 type OutboundImportTask struct {
 	ID string `json:"id"`
+	// Environment receives the imported event types, consumers and
+	// endpoints: the client's environment when the import started.
+	Environment string `json:"environment,omitempty"`
 	// Status is an OutboundImportStatus* constant.
 	Status string `json:"status"`
 	// Total and Processed count all items; Processed advances as each item is
