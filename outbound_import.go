@@ -73,7 +73,11 @@ type OutboundImportEndpoint struct {
 	// it.
 	Secret string `json:"secret,omitempty"`
 	// EventTypes lists the event types to deliver, or []string{"*"} for all.
-	EventTypes  []string          `json:"event_types"`
+	EventTypes []string `json:"event_types"`
+	// Channels and Filter narrow the messages the endpoint receives, as on
+	// OutboundEndpointOptions.
+	Channels    []string          `json:"channels,omitempty"`
+	Filter      OutboundFilter    `json:"filter,omitempty"`
 	Description string            `json:"description,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"`
 	// Rate is deliveries per second; 0 uses the consumer's rate.
